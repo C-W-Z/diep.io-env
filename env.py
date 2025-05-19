@@ -61,7 +61,7 @@ class Unit:
     def alive(self):
         return self.hp > 0
 
-    def recv_damage(self, damage, collider_hp, collider_type):
+    def recv_damage(self, damage: float, collider_hp: float, collider_type: UnitType):
         body_dmg = self.body_damage * (0.25 if collider_type == UnitType.Bullet else 1.0)
         damage_scale = 1.0
         if self.type == UnitType.Bullet:
@@ -137,7 +137,7 @@ class Unit:
         self.x = np.clip(self.x, self.radius, MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, MAP_SIZE - self.radius)
 
-class Player(Unit):
+class Tank(Unit):
     def __init__(
             self,
             x=np.random.uniform(0, MAP_SIZE),
@@ -145,18 +145,23 @@ class Player(Unit):
             max_hp=50.0,
             score=0,
         ):
-        super(Player, self).__init__(x=x, y=y, max_hp=max_hp)
+        super(Tank, self).__init__(
+            unit_type=UnitType.Tank,
+            x=x,
+            y=y,
+            max_hp=max_hp
+        )
         self.score = score
 
 class DiepIOEnvBasic(gym.Env):
-    def __init__(self, num_players=2, render_mode=True):
+    def __init__(self, n_tanks=2, render_mode=True):
         super(DiepIOEnvBasic, self).__init__()
-        self.num_players = num_players
+        self.n_tanks = n_tanks
         self.render_mode = render_mode
         self.max_steps = 1000000
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(num_players * 6,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(n_tanks * 6,), dtype=np.float32
         )
 
         self.action_space = spaces.Box(
@@ -172,11 +177,16 @@ class DiepIOEnvBasic(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.step_count = 0
-        self.units = [
-            Unit(x=np.random.uniform(100, MAP_SIZE-100), y=np.random.uniform(100, MAP_SIZE-100), max_hp=50.0)
-            for _ in range(self.num_players)
+        self.tanks = [
+            Tank(
+                x=np.random.uniform(100, MAP_SIZE-100),
+                y=np.random.uniform(100, MAP_SIZE-100),
+                max_hp=50.0,
+                score=0,
+            )
+            for _ in range(self.n_tanks)
         ]
-        obs = {i: self._get_obs(i) for i in range(self.num_players) if self.units[i].alive}
+        obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
         if self.render_mode:
             self.render()
         return obs, {}
@@ -186,12 +196,11 @@ class DiepIOEnvBasic(gym.Env):
         obs_surface = pygame.Surface((OBSERVATION_SIZE, OBSERVATION_SIZE))
         obs_surface.fill((255, 255, 255))  # White background
 
-        # Calculate scale: 500 pixels cover 833.33 map units
         obs_scale = 1
         obs_half = OBSERVATION_SIZE // 2  # 250
 
         # Center on the agent
-        agent = self.units[agent_id]
+        agent = self.tanks[agent_id]
         center_x, center_y = agent.x, agent.y
 
         # Draw black rectangles for areas outside map boundaries (0, 0, 1000, 1000)
@@ -216,11 +225,11 @@ class DiepIOEnvBasic(gym.Env):
         if bottom_boundary < OBSERVATION_SIZE:
             pygame.draw.rect(obs_surface, black_color, (0, bottom_boundary, OBSERVATION_SIZE, OBSERVATION_SIZE - bottom_boundary))
 
-        # Draw all units (same as original render)
-        for i, unit in enumerate(self.units):
+        # Draw all tanks (same as original render)
+        for i, unit in enumerate(self.tanks):
             if not unit.alive:
                 continue
-            # Calculate relative position in map units
+
             rel_x = unit.x - center_x
             rel_y = unit.y - center_y
             # Convert to pixel coordinates in 500x500 observation
@@ -271,8 +280,8 @@ class DiepIOEnvBasic(gym.Env):
         mouse_x, mouse_y = pygame.mouse.get_pos()
         scale = 1
         mouse_x, mouse_y = mouse_x / scale, mouse_y / scale
-        self.units[0].angle = np.arctan2(OBSERVATION_SIZE // 2 - mouse_y, mouse_x - OBSERVATION_SIZE // 2)
-        # print(self.units[0].angle)
+        self.tanks[0].angle = np.arctan2(OBSERVATION_SIZE // 2 - mouse_y, mouse_x - OBSERVATION_SIZE // 2)
+        # print(self.tanks[0].angle)
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _get_random_input(self):
@@ -289,70 +298,72 @@ class DiepIOEnvBasic(gym.Env):
         if dx != 0 or dy != 0:
             magnitude = np.sqrt(dx**2 + dy**2)
             dx, dy = dx / magnitude, dy / magnitude
-        self.units[1].angle = np.random.uniform(0, 2 * np.pi)
+        self.tanks[1].angle = np.random.uniform(0, 2 * np.pi)
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _handle_collisions(self):
-        for i in range(self.num_players):
-            for j in range(i + 1, self.num_players):
-                if not (self.units[i].alive and self.units[j].alive):
+        for i in range(self.n_tanks):
+            for j in range(i + 1, self.n_tanks):
+                if not (self.tanks[i].alive and self.tanks[j].alive):
                     continue
-                dx = self.units[i].x - self.units[j].x
-                dy = self.units[i].y - self.units[j].y
+                dx = self.tanks[i].x - self.tanks[j].x
+                dy = self.tanks[i].y - self.tanks[j].y
                 distance = np.sqrt(dx**2 + dy**2)
-                if distance < (self.units[i].radius + self.units[j].radius):
+                if distance < (self.tanks[i].radius + self.tanks[j].radius):
                     if distance == 0:
                         dx, dy = 1.0, 0.0
                         distance = 1.0
                     nx, ny = dx / distance, dy / distance
                     max_v = BASE_MAX_VELOCITY * COLLISION_BOUNCE_V_SCALE
-                    # overlap = 2 * self.units[i].radius - distance
-                    # self.units[i].x += nx * overlap / 2
-                    # self.units[i].y += ny * overlap / 2
-                    # self.units[j].x -= nx * overlap / 2
-                    # self.units[j].y -= ny * overlap / 2
-                    if self.units[i].invulberable_frame == 0:
-                        self.units[i].collision_vx = nx * max_v
-                        self.units[i].collision_vy = ny * max_v
-                        self.units[i].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
-                        self.units[i].recv_damage(self.units[j].body_damage, self.units[j].hp, self.units[j].type)
-                    if self.units[j].invulberable_frame == 0:
-                        self.units[j].collision_vx = -nx * max_v
-                        self.units[j].collision_vy = -ny * max_v
-                        self.units[j].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
-                        self.units[j].recv_damage(self.units[i].body_damage, self.units[i].hp, self.units[i].type)
+                    # overlap = 2 * self.tanks[i].radius - distance
+                    # self.tanks[i].x += nx * overlap / 2
+                    # self.tanks[i].y += ny * overlap / 2
+                    # self.tanks[j].x -= nx * overlap / 2
+                    # self.tanks[j].y -= ny * overlap / 2
+                    unit_i_hp_before_hit = self.tanks[i].hp
+                    if self.tanks[i].invulberable_frame == 0:
+                        self.tanks[i].collision_vx = nx * max_v
+                        self.tanks[i].collision_vy = ny * max_v
+                        self.tanks[i].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
+                        self.tanks[i].recv_damage(self.tanks[j].body_damage, self.tanks[j].hp, self.tanks[j].type)
+                    if self.tanks[j].invulberable_frame == 0:
+                        self.tanks[j].collision_vx = -nx * max_v
+                        self.tanks[j].collision_vy = -ny * max_v
+                        self.tanks[j].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
+                        self.tanks[j].recv_damage(self.tanks[i].body_damage, unit_i_hp_before_hit, self.tanks[i].type)
                     print("collision")
+                    print(self.tanks[0].hp, self.tanks[1].hp)
 
     def step(self, actions=None):
         self.step_count += 1
-        rewards = {i: 0.0 for i in range(self.num_players)}
-        dones = {i: False for i in range(self.num_players)}
+        rewards = {i: 0.0 for i in range(self.n_tanks)}
+        dones = {i: False for i in range(self.n_tanks)}
         infos = {}
 
         if actions is None:
             actions = {}
-            if self.units[0].alive:
+            if self.tanks[0].alive:
                 actions[0] = self._get_player_input()
-            if self.num_players > 1 and self.units[1].alive:
+            if self.n_tanks > 1 and self.tanks[1].alive:
                 actions[1] = self._get_random_input()
 
         for i, action in actions.items():
-            if self.units[i].alive:
-                self.units[i].update_counter()
+            if self.tanks[i].alive:
+                self.tanks[i].update_counter()
                 dx, dy, _ = action
-                self.units[i].update(dx, dy)
+                self.tanks[i].update(dx, dy)
                 rewards[i] += 0.01
 
         self._handle_collisions()
 
-        for i in range(self.num_players):
-            if not self.units[i].alive:
+        for i in range(self.n_tanks):
+            if not self.tanks[i].alive:
                 dones[i] = True
                 rewards[i] -= 10.0
-        if self.step_count >= self.max_steps or sum(unit.alive for unit in self.units) <= 1:
-            dones = {i: True for i in range(self.num_players)}
+        if self.step_count >= self.max_steps or sum(unit.alive for unit in self.tanks) <= 1:
+            dones = {i: True for i in range(self.n_tanks)}
 
-        obs = {i: self._get_obs(i) for i in range(self.num_players) if self.units[i].alive}
+        obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
         if self.render_mode:
             self.render()
         return obs, rewards, dones, False, infos
@@ -367,7 +378,7 @@ class DiepIOEnvBasic(gym.Env):
         self.screen.fill((255, 255, 255))  # White background
 
         # Display observation for each alive agent
-        for i, unit in enumerate(self.units[:1]):
+        for i, unit in enumerate(self.tanks[:1]):
             if not unit.alive:
                 continue
             # Get observation (500x500 RGB)
@@ -386,7 +397,7 @@ class DiepIOEnvBasic(gym.Env):
             pygame.quit()
 
 if __name__ == "__main__":
-    env = DiepIOEnvBasic(num_players=2, render_mode=True)
+    env = DiepIOEnvBasic(n_tanks=2, render_mode=True)
     obs, _ = env.reset()
     while True:
         obs, rewards, dones, _, _ = env.step()
