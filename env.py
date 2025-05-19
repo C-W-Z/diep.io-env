@@ -3,6 +3,12 @@ import numpy as np
 from gymnasium import spaces
 import pygame
 import sys
+from enum import Enum
+
+class UnitType(Enum):
+    Tank = 0
+    Polygon = 1
+    Bullet = 2
 
 # Constants
 MAP_SIZE = 1000.0
@@ -18,8 +24,16 @@ INVULNERABLE_FRAMES = 5
 
 OBSERVATION_SIZE = 1000
 
+SLOW_HP_REGEN_FRAMES = 30 * 60 # 30 seconds in 60 fps
+
 class Unit:
-    def __init__(self, x=np.random.uniform(0, MAP_SIZE), y=np.random.uniform(0, MAP_SIZE), max_hp=50.0):
+    def __init__(
+        self,
+        unit_type=UnitType.Polygon,
+        x=np.random.uniform(0, MAP_SIZE),
+        y=np.random.uniform(0, MAP_SIZE),
+        max_hp=50.0,
+    ):
         self.x = x
         self.y = y
         self.max_hp = max_hp
@@ -35,17 +49,43 @@ class Unit:
         self.collision_vx = 0.0
         self.collision_vy = 0.0
         self.invulberable_frame = 0
+        self.hp_regen_frames = 0
+
+        self.type = unit_type
+
+        # stats
+        self.health_regen = 0
+        self.body_damage = 20.0
 
     @property
     def alive(self):
         return self.hp > 0
 
+    def recv_damage(self, damage, collider_hp, collider_type):
+        body_dmg = self.body_damage * (0.25 if collider_type == UnitType.Bullet else 1.0)
+        damage_scale = 1.0
+        if self.type == UnitType.Bullet:
+            damage_scale = 0.25
+        elif self.type == UnitType.Tank and collider_type == UnitType.Tank:
+            damage_scale = 1.5
+        if collider_hp >= body_dmg:
+            self.hp -= damage_scale * damage
+        else:
+            self.hp -= damage_scale * damage * collider_hp / body_dmg
+        if self.hp < 0:
+            self.hp = 0.0
+        self.hp_regen_frames = SLOW_HP_REGEN_FRAMES
+        self.invulberable_frame = INVULNERABLE_FRAMES
+
+    def update_counter(self):
+        if self.invulberable_frame > 0:
+            self.invulberable_frame -= 1
+        if self.hp_regen_frames > 0:
+            self.hp_regen_frames -= 1
+
     def update(self, dx, dy):
         if not self.alive:
             return
-
-        if self.invulberable_frame > 0:
-            self.invulberable_frame -= 1
 
         # Handle normal motion
         if dx != 0 or dy != 0:
@@ -97,6 +137,17 @@ class Unit:
         self.x = np.clip(self.x, self.radius, MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, MAP_SIZE - self.radius)
 
+class Player(Unit):
+    def __init__(
+            self,
+            x=np.random.uniform(0, MAP_SIZE),
+            y=np.random.uniform(0, MAP_SIZE),
+            max_hp=50.0,
+            score=0,
+        ):
+        super(Player, self).__init__(x=x, y=y, max_hp=max_hp)
+        self.score = score
+
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, num_players=2, render_mode=True):
         super(DiepIOEnvBasic, self).__init__()
@@ -142,6 +193,28 @@ class DiepIOEnvBasic(gym.Env):
         # Center on the agent
         agent = self.units[agent_id]
         center_x, center_y = agent.x, agent.y
+
+        # Draw black rectangles for areas outside map boundaries (0, 0, 1000, 1000)
+        # Calculate map boundaries in pixel coordinates
+        left_boundary = int(obs_half + (0 - center_x) * obs_scale)  # x = 0
+        right_boundary = int(obs_half + (MAP_SIZE - center_x) * obs_scale)  # x = 1000
+        top_boundary = int(obs_half + (0 - center_y) * obs_scale)  # y = 0
+        bottom_boundary = int(obs_half + (MAP_SIZE - center_y) * obs_scale)  # y = 1000
+
+        # Draw black rectangles for out-of-bounds areas
+        black_color = (0, 0, 0)
+        # Left (x < 0)
+        if left_boundary > 0:
+            pygame.draw.rect(obs_surface, black_color, (0, 0, left_boundary, OBSERVATION_SIZE))
+        # Right (x > 1000)
+        if right_boundary < OBSERVATION_SIZE:
+            pygame.draw.rect(obs_surface, black_color, (right_boundary, 0, OBSERVATION_SIZE - right_boundary, OBSERVATION_SIZE))
+        # Top (y < 0)
+        if top_boundary > 0:
+            pygame.draw.rect(obs_surface, black_color, (0, 0, OBSERVATION_SIZE, top_boundary))
+        # Bottom (y > 1000)
+        if bottom_boundary < OBSERVATION_SIZE:
+            pygame.draw.rect(obs_surface, black_color, (0, bottom_boundary, OBSERVATION_SIZE, OBSERVATION_SIZE - bottom_boundary))
 
         # Draw all units (same as original render)
         for i, unit in enumerate(self.units):
@@ -233,8 +306,6 @@ class DiepIOEnvBasic(gym.Env):
                         distance = 1.0
                     nx, ny = dx / distance, dy / distance
                     max_v = BASE_MAX_VELOCITY * COLLISION_BOUNCE_V_SCALE
-
-
                     # overlap = 2 * self.units[i].radius - distance
                     # self.units[i].x += nx * overlap / 2
                     # self.units[i].y += ny * overlap / 2
@@ -244,19 +315,13 @@ class DiepIOEnvBasic(gym.Env):
                         self.units[i].collision_vx = nx * max_v
                         self.units[i].collision_vy = ny * max_v
                         self.units[i].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
-                        self.units[i].hp -= 20.0
-                        self.units[i].invulberable_frame = INVULNERABLE_FRAMES
+                        self.units[i].recv_damage(self.units[j].body_damage, self.units[j].hp, self.units[j].type)
                     if self.units[j].invulberable_frame == 0:
                         self.units[j].collision_vx = -nx * max_v
                         self.units[j].collision_vy = -ny * max_v
                         self.units[j].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
-                        self.units[j].hp -= 20.0
-                        self.units[j].invulberable_frame = INVULNERABLE_FRAMES
+                        self.units[j].recv_damage(self.units[i].body_damage, self.units[i].hp, self.units[i].type)
                     print("collision")
-                    # if self.units[i].hp <= 0:
-                    #     self.units[i].alive = False
-                    # if self.units[j].hp <= 0:
-                    #     self.units[j].alive = False
 
     def step(self, actions=None):
         self.step_count += 1
@@ -273,6 +338,7 @@ class DiepIOEnvBasic(gym.Env):
 
         for i, action in actions.items():
             if self.units[i].alive:
+                self.units[i].update_counter()
                 dx, dy, _ = action
                 self.units[i].update(dx, dy)
                 rewards[i] += 0.01
