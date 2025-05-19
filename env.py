@@ -12,24 +12,25 @@ class UnitType(Enum):
 
 # Constants
 GRID_SIZE = 25.0  # Grid size in map units
-MAP_SIZE = 60 * GRID_SIZE
-BASE_MAX_VELOCITY = 5.0
-BASE_MAX_ACCELLERATION = 0.5
+MAP_SIZE = 60
+BOARDER_SIZE = 5
+BASE_MAX_VELOCITY = 0.5
+BASE_MAX_ACCELLERATION = 0.02
 COLLISION_BOUNCE_V_SCALE = 0.75
 COLLISION_BOUNCE_DECCELLERATE_FRAMES = 40
 BASE_ACCELLERATION_FRAMES = 20
 BASE_DECCELLERATION_FRAMES = 30
 INVULNERABLE_FRAMES = 5
 SCREEN_SIZE = 1000  # Pixel size of render window
-OBSERVATION_SIZE = 1000  # Map units covered by observation
+OBSERVATION_SIZE = 40  # Map units covered by observation
 SLOW_HP_REGEN_FRAMES = 30 * 60  # 30 seconds in 60 fps
 
 class Unit:
     def __init__(
         self,
         unit_type=UnitType.Polygon,
-        x=np.random.uniform(100, MAP_SIZE-100),
-        y=np.random.uniform(100, MAP_SIZE-100),
+        x=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
+        y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
         max_hp=50.0,
     ):
         self.x = x
@@ -37,7 +38,7 @@ class Unit:
         self.max_hp = max_hp
         self.hp = max_hp
         self.v_scale = 1.0
-        self.radius = 1 * GRID_SIZE
+        self.radius = 1
         self.angle = 0.0
         self.vx = 0.0
         self.vy = 0.0
@@ -132,8 +133,8 @@ class Unit:
 class Tank(Unit):
     def __init__(
         self,
-        x=np.random.uniform(100, MAP_SIZE-100),
-        y=np.random.uniform(100, MAP_SIZE-100),
+        x=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
+        y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
         max_hp=50.0,
         score=0,
     ):
@@ -175,8 +176,8 @@ class DiepIOEnvBasic(gym.Env):
         self.step_count = 0
         self.tanks = [
             Tank(
-                x=np.random.uniform(100, MAP_SIZE-100),
-                y=np.random.uniform(100, MAP_SIZE-100),
+                x=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
+                y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
                 max_hp=50.0,
                 score=0,
             )
@@ -212,10 +213,10 @@ class DiepIOEnvBasic(gym.Env):
         center_x, center_y = agent.x, agent.y
 
         # Draw black rectangles for areas outside map boundaries
-        left_boundary = int(obs_half + (5 * GRID_SIZE - center_x) * obs_scale)  # x = 5 * GRID_SIZE
-        right_boundary = int(obs_half + (MAP_SIZE - 5 * GRID_SIZE - center_x) * obs_scale)  # x = MAP_SIZE - 5 * GRID_SIZE
-        top_boundary = int(obs_half + (5 * GRID_SIZE - center_y) * obs_scale)  # y = 5 * GRID_SIZE
-        bottom_boundary = int(obs_half + (MAP_SIZE - 5 * GRID_SIZE - center_y) * obs_scale)  # y = MAP_SIZE - 5 * GRID_SIZE
+        left_boundary = int(obs_half + (BOARDER_SIZE - center_x) * obs_scale)  # x = BOARDER_SIZE
+        right_boundary = int(obs_half + (MAP_SIZE - BOARDER_SIZE - center_x) * obs_scale)  # x = MAP_SIZE - BOARDER_SIZE
+        top_boundary = int(obs_half + (BOARDER_SIZE - center_y) * obs_scale)  # y = BOARDER_SIZE
+        bottom_boundary = int(obs_half + (MAP_SIZE - BOARDER_SIZE - center_y) * obs_scale)  # y = MAP_SIZE - BOARDER_SIZE
 
         black_color = (191, 191, 191)
         if left_boundary > 0:
@@ -237,14 +238,14 @@ class DiepIOEnvBasic(gym.Env):
         max_y = min(MAP_SIZE, center_y + OBSERVATION_SIZE / 2)
         # Grid line positions (snap to GRID_SIZE)
         x_grid = np.arange(
-            np.ceil(min_x / GRID_SIZE) * GRID_SIZE,
-            np.floor(max_x / GRID_SIZE) * GRID_SIZE + GRID_SIZE,
-            GRID_SIZE
+            np.ceil(min_x),
+            np.floor(max_x) + 1,
+            1
         )
         y_grid = np.arange(
-            np.ceil(min_y / GRID_SIZE) * GRID_SIZE,
-            np.floor(max_y / GRID_SIZE) * GRID_SIZE + GRID_SIZE,
-            GRID_SIZE
+            np.ceil(min_y),
+            np.floor(max_y) + 1,
+            1
         )
 
         left_boundary = int(obs_half + (0 - center_x) * obs_scale)  # x = 0
@@ -272,11 +273,11 @@ class DiepIOEnvBasic(gym.Env):
             pixel_x = int(obs_half + rel_x * obs_scale)
             pixel_y = int(obs_half + rel_y * obs_scale)
             if 0 <= pixel_x < SCREEN_SIZE and 0 <= pixel_y < SCREEN_SIZE:
-                color = (255, 0, 0) if i == 0 else (0, 0, 255)
-                pygame.draw.circle(
-                    surface, color,
-                    (pixel_x, pixel_y),
-                    int(unit.radius * obs_scale)
+                # Draw HP bar
+                hp_width = int(GRID_SIZE * 2 * unit.radius * unit.hp / unit.max_hp)  # Scale with grid
+                pygame.draw.rect(
+                    surface, (0, 255, 0),
+                    (pixel_x - GRID_SIZE * 1, pixel_y + GRID_SIZE * 1.2, hp_width, 5)
                 )
                 # Draw orientation line
                 end_x = pixel_x + unit.radius * 2 * obs_scale * np.cos(unit.angle)
@@ -287,11 +288,12 @@ class DiepIOEnvBasic(gym.Env):
                     (end_x, end_y),
                     2
                 )
-                # Draw HP bar
-                hp_width = int(GRID_SIZE * 2 * unit.hp / unit.max_hp)  # Scale with grid
-                pygame.draw.rect(
-                    surface, (0, 255, 0),
-                    (pixel_x - GRID_SIZE * 1, pixel_y + GRID_SIZE * 1.2, hp_width, 5)
+                # Draw body
+                color = (0, 0, 255) if i == 0 else (255, 0, 0)
+                pygame.draw.circle(
+                    surface, color,
+                    (pixel_x, pixel_y),
+                    int(unit.radius * obs_scale)
                 )
 
         return surface
