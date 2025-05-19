@@ -11,27 +11,25 @@ class UnitType(Enum):
     Bullet = 2
 
 # Constants
-MAP_SIZE = 1000.0
+GRID_SIZE = 25.0  # Grid size in map units
+MAP_SIZE = 60 * GRID_SIZE
 BASE_MAX_VELOCITY = 5.0
 BASE_MAX_ACCELLERATION = 0.5
-COLLISION_BOUNCE_V_SCALE = 0.5
-COLLISION_BOUNCE_DECCELLERATE_FRAMES = 30
-
+COLLISION_BOUNCE_V_SCALE = 0.75
+COLLISION_BOUNCE_DECCELLERATE_FRAMES = 40
 BASE_ACCELLERATION_FRAMES = 20
-BASE_DECCELLERATION_FRAMES = 20
-
+BASE_DECCELLERATION_FRAMES = 30
 INVULNERABLE_FRAMES = 5
-
-OBSERVATION_SIZE = 1000
-
-SLOW_HP_REGEN_FRAMES = 30 * 60 # 30 seconds in 60 fps
+SCREEN_SIZE = 1000  # Pixel size of render window
+OBSERVATION_SIZE = 1000  # Map units covered by observation
+SLOW_HP_REGEN_FRAMES = 30 * 60  # 30 seconds in 60 fps
 
 class Unit:
     def __init__(
         self,
         unit_type=UnitType.Polygon,
-        x=np.random.uniform(0, MAP_SIZE),
-        y=np.random.uniform(0, MAP_SIZE),
+        x=np.random.uniform(100, MAP_SIZE-100),
+        y=np.random.uniform(100, MAP_SIZE-100),
         max_hp=50.0,
     ):
         self.x = x
@@ -39,7 +37,7 @@ class Unit:
         self.max_hp = max_hp
         self.hp = max_hp
         self.v_scale = 1.0
-        self.radius = 20.0
+        self.radius = 1 * GRID_SIZE
         self.angle = 0.0
         self.vx = 0.0
         self.vy = 0.0
@@ -50,10 +48,8 @@ class Unit:
         self.collision_vy = 0.0
         self.invulberable_frame = 0
         self.hp_regen_frames = 0
-
         self.type = unit_type
-
-        # stats
+        # Stats
         self.health_regen = 0
         self.body_damage = 20.0
 
@@ -127,10 +123,6 @@ class Unit:
 
         final_vx = self.vx + collision_vx
         final_vy = self.vy + collision_vy
-        # final_speed = np.sqrt(final_vx**2 + final_vy**2)
-        # if final_speed > max_v and final_speed > 0:
-        #     final_vx = final_vx * max_v / final_speed
-        #     final_vy = final_vy * max_v / final_speed
 
         self.x += final_vx
         self.y += final_vy
@@ -139,12 +131,12 @@ class Unit:
 
 class Tank(Unit):
     def __init__(
-            self,
-            x=np.random.uniform(0, MAP_SIZE),
-            y=np.random.uniform(0, MAP_SIZE),
-            max_hp=50.0,
-            score=0,
-        ):
+        self,
+        x=np.random.uniform(100, MAP_SIZE-100),
+        y=np.random.uniform(100, MAP_SIZE-100),
+        max_hp=50.0,
+        score=0,
+    ):
         super(Tank, self).__init__(
             unit_type=UnitType.Tank,
             x=x,
@@ -160,6 +152,7 @@ class DiepIOEnvBasic(gym.Env):
         self.render_mode = render_mode
         self.max_steps = 1000000
 
+        # Observation space: Vector of tank states
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(n_tanks * 6,), dtype=np.float32
         )
@@ -170,8 +163,11 @@ class DiepIOEnvBasic(gym.Env):
 
         if self.render_mode:
             pygame.init()
-            self.screen = pygame.display.set_mode((OBSERVATION_SIZE, OBSERVATION_SIZE))
+            self.screen = pygame.display.set_mode((SCREEN_SIZE, SCREEN_SIZE))
             self.clock = pygame.time.Clock()
+            self.observation_space = spaces.Box(
+                low=0, high=255, shape=(SCREEN_SIZE, SCREEN_SIZE, 3), dtype=np.uint8
+            )
 
         self.reset()
 
@@ -192,76 +188,116 @@ class DiepIOEnvBasic(gym.Env):
         return obs, {}
 
     def _get_obs(self, agent_id):
-        # Create a 500x500 surface for observation
-        obs_surface = pygame.Surface((OBSERVATION_SIZE, OBSERVATION_SIZE))
-        obs_surface.fill((255, 255, 255))  # White background
+        # Placeholder: Current vector observation (not used for rendering)
+        obs = []
+        for i in range(self.n_tanks):
+            tank = self.tanks[i]
+            if tank.alive:
+                obs.extend([tank.x, tank.y, tank.vx, tank.vy, tank.hp, tank.angle])
+            else:
+                obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        return np.array(obs, dtype=np.float32)
 
-        obs_scale = 1
-        obs_half = OBSERVATION_SIZE // 2  # 250
+    def _render_frame(self, agent_id):
+        # Create a SCREEN_SIZE x SCREEN_SIZE surface
+        surface = pygame.Surface((SCREEN_SIZE, SCREEN_SIZE))
+        surface.fill((255, 255, 255))  # White background
+
+        # Calculate scale: SCREEN_SIZE pixels cover OBSERVATION_SIZE map units
+        obs_scale = SCREEN_SIZE / OBSERVATION_SIZE  # e.g., 1000 / 600 ≈ 1.667
+        obs_half = SCREEN_SIZE // 2  # 500
 
         # Center on the agent
         agent = self.tanks[agent_id]
         center_x, center_y = agent.x, agent.y
 
-        # Draw black rectangles for areas outside map boundaries (0, 0, 1000, 1000)
-        # Calculate map boundaries in pixel coordinates
-        left_boundary = int(obs_half + (0 - center_x) * obs_scale)  # x = 0
-        right_boundary = int(obs_half + (MAP_SIZE - center_x) * obs_scale)  # x = 1000
-        top_boundary = int(obs_half + (0 - center_y) * obs_scale)  # y = 0
-        bottom_boundary = int(obs_half + (MAP_SIZE - center_y) * obs_scale)  # y = 1000
+        # Draw black rectangles for areas outside map boundaries
+        left_boundary = int(obs_half + (5 * GRID_SIZE - center_x) * obs_scale)  # x = 5 * GRID_SIZE
+        right_boundary = int(obs_half + (MAP_SIZE - 5 * GRID_SIZE - center_x) * obs_scale)  # x = MAP_SIZE - 5 * GRID_SIZE
+        top_boundary = int(obs_half + (5 * GRID_SIZE - center_y) * obs_scale)  # y = 5 * GRID_SIZE
+        bottom_boundary = int(obs_half + (MAP_SIZE - 5 * GRID_SIZE - center_y) * obs_scale)  # y = MAP_SIZE - 5 * GRID_SIZE
 
-        # Draw black rectangles for out-of-bounds areas
-        black_color = (0, 0, 0)
-        # Left (x < 0)
+        black_color = (191, 191, 191)
         if left_boundary > 0:
-            pygame.draw.rect(obs_surface, black_color, (0, 0, left_boundary, OBSERVATION_SIZE))
-        # Right (x > 1000)
-        if right_boundary < OBSERVATION_SIZE:
-            pygame.draw.rect(obs_surface, black_color, (right_boundary, 0, OBSERVATION_SIZE - right_boundary, OBSERVATION_SIZE))
-        # Top (y < 0)
+            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, SCREEN_SIZE))
+        if right_boundary < SCREEN_SIZE:
+            pygame.draw.rect(surface, black_color, (right_boundary, 0, SCREEN_SIZE - right_boundary, SCREEN_SIZE))
         if top_boundary > 0:
-            pygame.draw.rect(obs_surface, black_color, (0, 0, OBSERVATION_SIZE, top_boundary))
-        # Bottom (y > 1000)
-        if bottom_boundary < OBSERVATION_SIZE:
-            pygame.draw.rect(obs_surface, black_color, (0, bottom_boundary, OBSERVATION_SIZE, OBSERVATION_SIZE - bottom_boundary))
+            pygame.draw.rect(surface, black_color, (0, 0, SCREEN_SIZE, top_boundary))
+        if bottom_boundary < SCREEN_SIZE:
+            pygame.draw.rect(surface, black_color, (0, bottom_boundary, SCREEN_SIZE, SCREEN_SIZE - bottom_boundary))
 
-        # Draw all tanks (same as original render)
+        # Draw grid lines (spacing = GRID_SIZE map units)
+        grid_color = (150, 150, 150)  # Light gray
+        # grid_pixel_spacing = GRID_SIZE * obs_scale  # e.g., 50 * 1.667 ≈ 83.33 pixels
+        # Calculate visible grid lines
+        min_x = max(0, center_x - OBSERVATION_SIZE / 2)
+        max_x = min(MAP_SIZE, center_x + OBSERVATION_SIZE / 2)
+        min_y = max(0, center_y - OBSERVATION_SIZE / 2)
+        max_y = min(MAP_SIZE, center_y + OBSERVATION_SIZE / 2)
+        # Grid line positions (snap to GRID_SIZE)
+        x_grid = np.arange(
+            np.ceil(min_x / GRID_SIZE) * GRID_SIZE,
+            np.floor(max_x / GRID_SIZE) * GRID_SIZE + GRID_SIZE,
+            GRID_SIZE
+        )
+        y_grid = np.arange(
+            np.ceil(min_y / GRID_SIZE) * GRID_SIZE,
+            np.floor(max_y / GRID_SIZE) * GRID_SIZE + GRID_SIZE,
+            GRID_SIZE
+        )
+
+        left_boundary = int(obs_half + (0 - center_x) * obs_scale)  # x = 0
+        right_boundary = int(obs_half + (MAP_SIZE - center_x) * obs_scale)  # x = MAP_SIZE
+        top_boundary = int(obs_half + (0 - center_y) * obs_scale)  # y = 0
+        bottom_boundary = int(obs_half + (MAP_SIZE - center_y) * obs_scale)  # y = MAP_SIZE
+
+        # Draw vertical lines
+        for x in x_grid:
+            pixel_x = int(obs_half + (x - center_x) * obs_scale)
+            if 0 <= pixel_x < SCREEN_SIZE:
+                pygame.draw.line(surface, grid_color, (pixel_x, top_boundary), (pixel_x, bottom_boundary), 1)
+        # Draw horizontal lines
+        for y in y_grid:
+            pixel_y = int(obs_half + (y - center_y) * obs_scale)
+            if 0 <= pixel_y < SCREEN_SIZE:
+                pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
+
+        # Draw all tanks
         for i, unit in enumerate(self.tanks):
             if not unit.alive:
                 continue
-
             rel_x = unit.x - center_x
             rel_y = unit.y - center_y
-            # Convert to pixel coordinates in 500x500 observation
             pixel_x = int(obs_half + rel_x * obs_scale)
             pixel_y = int(obs_half + rel_y * obs_scale)
-            # Draw unit
-            if (0 <= pixel_x < OBSERVATION_SIZE and 0 <= pixel_y < OBSERVATION_SIZE):
+            if 0 <= pixel_x < SCREEN_SIZE and 0 <= pixel_y < SCREEN_SIZE:
                 color = (255, 0, 0) if i == 0 else (0, 0, 255)
                 pygame.draw.circle(
-                    obs_surface, color,
+                    surface, color,
                     (pixel_x, pixel_y),
                     int(unit.radius * obs_scale)
                 )
                 # Draw orientation line
                 end_x = pixel_x + unit.radius * 2 * obs_scale * np.cos(unit.angle)
-                end_y = pixel_y - unit.radius * 2 * obs_scale * np.sin(unit.angle)  # Flip sin for Pygame y-axis
+                end_y = pixel_y - unit.radius * 2 * obs_scale * np.sin(unit.angle)  # Flip for Pygame y-axis
                 pygame.draw.line(
-                    obs_surface, (0, 0, 0),
+                    surface, (0, 0, 0),
                     (pixel_x, pixel_y),
                     (end_x, end_y),
                     2
                 )
                 # Draw HP bar
-                hp_width = int(20 * unit.hp / unit.max_hp)
+                hp_width = int(GRID_SIZE * 2 * unit.hp / unit.max_hp)  # Scale with grid
                 pygame.draw.rect(
-                    obs_surface, (0, 255, 0),
-                    (pixel_x - 10, pixel_y - 15, hp_width, 3)
+                    surface, (0, 255, 0),
+                    (pixel_x - GRID_SIZE * 1, pixel_y + GRID_SIZE * 1.2, hp_width, 5)
                 )
 
+        return surface
         # Convert surface to RGB NumPy array
-        obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
-        return obs_array
+        # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
+        # return obs_array
 
     def _get_player_input(self):
         dx, dy, shoot = 0.0, 0.0, 0.0
@@ -278,10 +314,8 @@ class DiepIOEnvBasic(gym.Env):
             magnitude = np.sqrt(dx**2 + dy**2)
             dx, dy = dx / magnitude, dy / magnitude
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        scale = 1
-        mouse_x, mouse_y = mouse_x / scale, mouse_y / scale
-        self.tanks[0].angle = np.arctan2(OBSERVATION_SIZE // 2 - mouse_y, mouse_x - OBSERVATION_SIZE // 2)
-        # print(self.tanks[0].angle)
+        obs_half = SCREEN_SIZE // 2
+        self.tanks[0].angle = np.arctan2(obs_half - mouse_y, mouse_x - obs_half)
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _get_random_input(self):
@@ -309,17 +343,13 @@ class DiepIOEnvBasic(gym.Env):
                 dx = self.tanks[i].x - self.tanks[j].x
                 dy = self.tanks[i].y - self.tanks[j].y
                 distance = np.sqrt(dx**2 + dy**2)
-                if distance < (self.tanks[i].radius + self.tanks[j].radius):
+                radius_sum = self.tanks[i].radius + self.tanks[j].radius
+                if distance < radius_sum:
                     if distance == 0:
                         dx, dy = 1.0, 0.0
                         distance = 1.0
                     nx, ny = dx / distance, dy / distance
                     max_v = BASE_MAX_VELOCITY * COLLISION_BOUNCE_V_SCALE
-                    # overlap = 2 * self.tanks[i].radius - distance
-                    # self.tanks[i].x += nx * overlap / 2
-                    # self.tanks[i].y += ny * overlap / 2
-                    # self.tanks[j].x -= nx * overlap / 2
-                    # self.tanks[j].y -= ny * overlap / 2
                     unit_i_hp_before_hit = self.tanks[i].hp
                     if self.tanks[i].invulberable_frame == 0:
                         self.tanks[i].collision_vx = nx * max_v
@@ -328,11 +358,9 @@ class DiepIOEnvBasic(gym.Env):
                         self.tanks[i].recv_damage(self.tanks[j].body_damage, self.tanks[j].hp, self.tanks[j].type)
                     if self.tanks[j].invulberable_frame == 0:
                         self.tanks[j].collision_vx = -nx * max_v
-                        self.tanks[j].collision_vy = -ny * max_v
+                        self.tanks[j].collision_vy = -nx * max_v
                         self.tanks[j].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
                         self.tanks[j].recv_damage(self.tanks[i].body_damage, unit_i_hp_before_hit, self.tanks[i].type)
-                    print("collision")
-                    print(self.tanks[0].hp, self.tanks[1].hp)
 
     def step(self, actions=None):
         self.step_count += 1
@@ -375,19 +403,12 @@ class DiepIOEnvBasic(gym.Env):
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-        self.screen.fill((255, 255, 255))  # White background
+        self.screen.fill((255, 255, 255))
 
-        # Display observation for each alive agent
-        for i, unit in enumerate(self.tanks[:1]):
-            if not unit.alive:
-                continue
-            # Get observation (500x500 RGB)
-            obs = self._get_obs(i)  # Shape: (500, 500, 3)
-            # Create Pygame surface
-            obs_surface = pygame.surfarray.make_surface(obs)
-            # Draw at appropriate position
-            x_pos = i * OBSERVATION_SIZE  # Agent 0 at (0, 0), Agent 1 at (500, 0)
-            self.screen.blit(obs_surface, (x_pos, 0))
+        # Render only agent 0's perspective
+        if self.tanks[0].alive:
+            surface = self._render_frame(0)
+            self.screen.blit(surface, (0, 0))
 
         pygame.display.flip()
         self.clock.tick(60)
