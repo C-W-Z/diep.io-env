@@ -3,7 +3,7 @@ import numpy as np
 from gymnasium import spaces
 import pygame
 import sys
-from enum import Enum
+from enum import Enum, IntEnum
 
 class UnitType(Enum):
     Tank = 0
@@ -139,63 +139,41 @@ class Unit:
         self.x = np.clip(self.x, self.radius, MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, MAP_SIZE - self.radius)
 
+class TST(IntEnum):
+    HealthRegen  = 0
+    MaxHealth    = 1
+    BodyDamage   = 2
+    BulletSpeed  = 3
+    BulletPen    = 4
+    BulletDamage = 5
+    Reload       = 6
+    Speed        = 7
+
 class TankStats:
     def __init__(self):
-        self.reset()
+        self.raw = np.uint32(0)
 
-    def reset(self):
-        self.health_regen = 0
-        self.max_health = 0
-        self.body_damage = 0
-        self.bullet_speed = 0
-        self.bullet_penetration = 0
-        self.bullet_damage = 0
-        self.reload = 0
-        self.movement_speed = 0
+    def __getitem__(self, key):
+        i     = int(key)
+        shift = i * 4
+        mask  = 0b1111 << shift
 
-    def add_point(self, i: int):
-        if i == 0:
-            if self.health_regen < 7:
-                self.health_regen += 1
-            else:
-                return False
-        elif i == 1:
-            if self.max_health < 7:
-                self.max_health += 1
-            else:
-                return False
-        elif i == 2:
-            if self.body_damage < 7:
-                self.body_damage += 1
-            else:
-                return False
-        elif i == 3:
-            if self.bullet_speed < 7:
-                self.bullet_speed += 1
-            else:
-                return False
-        elif i == 4:
-            if self.bullet_penetration < 7:
-                self.bullet_penetration += 1
-            else:
-                return False
-        elif i == 5:
-            if self.bullet_damage < 7:
-                self.bullet_damage += 1
-            else:
-                return False
-        elif i == 6:
-            if self.reload < 7:
-                self.reload += 1
-            else:
-                return False
-        elif i == 7:
-            if self.movement_speed < 7:
-                self.movement_speed += 1
-            else:
-                return False
-        else:
+        return (self.raw & mask) >> shift
+
+    def __setitem__(self, key, value):
+        assert value >= 0 and value <= 7
+
+        i     = int(key)
+        shift = i * 4
+        mask  = 0b1111 << shift
+
+        self.raw = (self.raw & ~mask) | (value << shift)
+
+    def add_point(self, attribute_type):
+        if self[attribute_type] >= 7:
             return False
+
+        self[attribute_type] += 1
         return True
 
 class Tank(Unit):
@@ -252,34 +230,34 @@ class Tank(Unit):
 
     def calc_stats_properties(self):
         # Health Regen
-        self.slow_health_regen = (0.03 + 0.12 * self.stats.health_regen) / 30 / FPS
-        self.fast_health_regen = FAST_REGEN_LIST[self.stats.health_regen] / FPS
+        self.slow_health_regen = (0.03 + 0.12 * self.stats[TST.HealthRegen]) / 30 / FPS
+        self.fast_health_regen = FAST_REGEN_LIST[self.stats[TST.HealthRegen]] / FPS
 
         # Max Health
         old_max_hp = self.max_hp
-        self.max_hp = 50.0 + 2 * (self.level - 1) + self.stats.max_health * 20.0
+        self.max_hp = 50.0 + 2 * (self.level - 1) + self.stats[TST.MaxHealth] * 20.0
         if self.max_hp > old_max_hp:
             self.hp += self.max_hp - old_max_hp
         elif self.hp > self.max_hp:
             self.hp = self.max_hp
 
         # Body Damage
-        self.body_damage = 20.0 + self.stats.body_damage * 4.0
+        self.body_damage = 20.0 + self.stats[TST.BodyDamage] * 4.0
 
         # Bullet Speed
         self.bullet_v_scale = 2.0 # TODO
 
         # Bullet Penetration
-        self.bullet_max_hp = 2.0 + self.stats.bullet_penetration * 1.5
+        self.bullet_max_hp = 2.0 + self.stats[TST.BulletPen] * 1.5
 
         # Bullet Damage
-        self.bullet_damage = 7.0 + self.stats.bullet_damage * 3.0
+        self.bullet_damage = 7.0 + self.stats[TST.BulletDamage] * 3.0
 
         # Reload
-        self.reload_frames = (0.6 - self.stats.reload * 0.04) * FPS
+        self.reload_frames = (0.6 - self.stats[TST.Reload] * 0.04) * FPS
 
         # Movement Speed
-        self.v_scale = 1.0 + self.stats.movement_speed * 0.03 - (self.level - 1) * 0.001 # not sure
+        self.v_scale = 1.0 + self.stats[TST.Speed] * 0.03 - (self.level - 1) * 0.001 # not sure
 
         # ===== Hidden Properties =====
 
@@ -295,7 +273,7 @@ class Tank(Unit):
         self.observation_size = 40.0 + (self.level - 1) * 10.0 / 44
 
         # Knockback Resistance
-        # self.stats.body_damage, self.stats.movement_speed
+        # self.stats[TST.BodyDamage], self.stats[TST.Speed]
 
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
