@@ -11,14 +11,6 @@ class UnitType(Enum):
     Polygon = 1
     Bullet = 2
 
-EXP_LIST = [
-    0, 0, 4, 13, 28, 50, 78, 113, 157, 211, 275, 350, 437, 538, 655, 787, 938, 1109, 1301, 1516, 1757, 2026, 2325,
-    2658, 3026, 3433, 3883, 4379, 4925, 5525, 6184, 6907, 7698, 8537, 9426, 10368, 11367, 12426, 13549, 14730, 16000,
-    17337, 18754, 20256, 21849, 23536
-]
-RESPAWN_LEVEL_LIST = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 22]
-FAST_REGEN_LIST = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
-
 class Unit:
     def __init__(
         self,
@@ -213,7 +205,7 @@ class Tank(Unit):
     @staticmethod
     def score2level(score: int):
         level = 1
-        for i, exp in enumerate(EXP_LIST):
+        for i, exp in enumerate(cfg.EXP_LIST):
             if score < exp:
                 break
             level = i
@@ -229,7 +221,7 @@ class Tank(Unit):
     def calc_stats_properties(self):
         # Health Regen
         self.slow_health_regen = (0.03 + 0.12 * self.stats[TST.HealthRegen]) / 30 / cfg.FPS
-        self.fast_health_regen = FAST_REGEN_LIST[self.stats[TST.HealthRegen]] / cfg.FPS
+        self.fast_health_regen = cfg.FAST_REGEN_LIST[self.stats[TST.HealthRegen]] / cfg.FPS
 
         # Max Health
         old_max_hp = self.max_hp
