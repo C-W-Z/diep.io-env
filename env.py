@@ -34,7 +34,8 @@ class Unit:
         self.hp = max_hp
         self.v_scale = 1.0
         self.radius = 1
-        self.angle = 0.0
+        self.rx = 1.0 # facing direction
+        self.ry = 0.0 # facing direction
         self.vx = 0.0
         self.vy = 0.0
         self.ax = 0.0
@@ -320,7 +321,7 @@ class DiepIOEnvBasic(gym.Env):
         for i in range(self.n_tanks):
             tank = self.tanks[i]
             if tank.alive:
-                obs.extend([tank.x, tank.y, tank.vx, tank.vy, tank.hp, tank.angle])
+                obs.extend([tank.x, tank.y, tank.vx, tank.vy, tank.rx, tank.ry])
             else:
                 obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         return np.array(obs, dtype=np.float32)
@@ -398,8 +399,8 @@ class DiepIOEnvBasic(gym.Env):
                     (pixel_x - grid_size * 1, pixel_y + grid_size * 1.2, hp_width, 5)
                 )
                 # Draw orientation line
-                end_x = pixel_x + unit.radius * 2 * grid_size * np.cos(unit.angle)
-                end_y = pixel_y - unit.radius * 2 * grid_size * np.sin(unit.angle)  # Flip for Pygame y-axis
+                end_x = pixel_x + unit.radius * 2 * grid_size * unit.rx
+                end_y = pixel_y - unit.radius * 2 * grid_size * unit.ry
                 pygame.draw.line(
                     surface, (127, 127, 127),
                     (pixel_x, pixel_y),
@@ -435,7 +436,9 @@ class DiepIOEnvBasic(gym.Env):
             dx, dy = dx / magnitude, dy / magnitude
         mouse_x, mouse_y = pygame.mouse.get_pos()
         screen_half = cfg.SCREEN_SIZE // 2
-        self.tanks[0].angle = np.arctan2(screen_half - mouse_y, mouse_x - screen_half)
+        rx, ry = mouse_x - screen_half, screen_half - mouse_y
+        magnitude = np.sqrt(rx**2 + ry**2)
+        self.tanks[0].rx, self.tanks[0].ry = rx / magnitude, ry / magnitude
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _get_random_input(self):
@@ -452,7 +455,9 @@ class DiepIOEnvBasic(gym.Env):
         if dx != 0 or dy != 0:
             magnitude = np.sqrt(dx**2 + dy**2)
             dx, dy = dx / magnitude, dy / magnitude
-        self.tanks[1].angle = np.random.uniform(0, 2 * np.pi)
+        rx, ry = np.random.uniform(-1, 1), np.random.uniform(-1, 1)
+        magnitude = np.sqrt(rx**2 + ry**2)
+        self.tanks[1].rx, self.tanks[1].ry = rx / magnitude, ry / magnitude
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _handle_collisions(self):
