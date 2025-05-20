@@ -4,25 +4,12 @@ from gymnasium import spaces
 import pygame
 import sys
 from enum import Enum, IntEnum
+from config import config as cfg
 
 class UnitType(Enum):
     Tank = 0
     Polygon = 1
     Bullet = 2
-
-# Constants
-FPS = 60
-MAP_SIZE = 80
-BOARDER_SIZE = 5
-BASE_MAX_VELOCITY = 0.5
-BASE_MAX_ACCELLERATION = 0.02
-COLLISION_BOUNCE_V_SCALE = 0.75
-COLLISION_BOUNCE_DECCELLERATE_FRAMES = 40
-BASE_ACCELLERATION_FRAMES = 20
-BASE_DECCELLERATION_FRAMES = 30
-INVULNERABLE_FRAMES = 5
-SCREEN_SIZE = 1000  # Pixel size of render window
-SLOW_HP_REGEN_FRAMES = 30 * FPS  # 30 seconds in 60 fps
 
 EXP_LIST = [
     0, 0, 4, 13, 28, 50, 78, 113, 157, 211, 275, 350, 437, 538, 655, 787, 938, 1109, 1301, 1516, 1757, 2026, 2325,
@@ -36,8 +23,8 @@ class Unit:
     def __init__(
         self,
         unit_type=UnitType.Polygon,
-        x=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
-        y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
+        x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+        y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
         max_hp=50.0,
     ):
         self.type = unit_type
@@ -58,8 +45,8 @@ class Unit:
         self.invulberable_frame = 0
         self.hp_regen_frame = 0
         # Stats Properties
-        self.slow_health_regen = 0.03 / 30 / FPS # per frame, == 3% per 30 second
-        self.fast_health_regen = 0.0312 / FPS # per frame, == 3.12% per second
+        self.slow_health_regen = 0.03 / 30 / cfg.FPS # per frame, == 3% per 30 second
+        self.fast_health_regen = 0.0312 / cfg.FPS # per frame, == 3.12% per second
         self.body_damage = 20.0
 
     @property
@@ -79,8 +66,8 @@ class Unit:
             self.hp -= damage_scale * damage * collider_hp / body_dmg
         if self.hp < 0:
             self.hp = 0.0
-        self.hp_regen_frame = SLOW_HP_REGEN_FRAMES
-        self.invulberable_frame = INVULNERABLE_FRAMES
+        self.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
+        self.invulberable_frame = cfg.INVULNERABLE_FRAMES
 
     def regen_health(self):
         if not self.alive:
@@ -103,13 +90,13 @@ class Unit:
             return
 
         # Handle normal motion
-        max_v = BASE_MAX_VELOCITY * self.v_scale
+        max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
 
         if dx != 0 or dy != 0:
             magnitude = np.sqrt(dx**2 + dy**2)
             dx, dy = dx / magnitude, dy / magnitude
-            self.ax = dx * max_v / BASE_ACCELLERATION_FRAMES
-            self.ay = dy * max_v / BASE_ACCELLERATION_FRAMES
+            self.ax = dx * max_v / cfg.BASE_ACCELLERATION_FRAMES
+            self.ay = dy * max_v / cfg.BASE_ACCELLERATION_FRAMES
         else:
             speed = np.sqrt(self.vx**2 + self.vy**2)
             if speed < 0.1:
@@ -119,8 +106,8 @@ class Unit:
                 self.ay = 0.0
             elif speed > 0:
                 dx, dy = -self.vx / speed, -self.vy / speed
-                self.ax = dx * max_v / BASE_DECCELLERATION_FRAMES
-                self.ay = dy * max_v / BASE_DECCELLERATION_FRAMES
+                self.ax = dx * max_v / cfg.BASE_DECCELLERATION_FRAMES
+                self.ay = dy * max_v / cfg.BASE_DECCELLERATION_FRAMES
 
         self.vx += self.ax
         self.vy += self.ay
@@ -132,7 +119,7 @@ class Unit:
         # Handle collision motion
         collision_vx, collision_vy = 0.0, 0.0
         if self.collision_frame > 0:
-            factor = self.collision_frame / COLLISION_BOUNCE_DECCELLERATE_FRAMES
+            factor = self.collision_frame / cfg.COLLISION_BOUNCE_DECCELLERATE_FRAMES
             collision_vx = self.collision_vx * factor
             collision_vy = self.collision_vy * factor
             self.collision_frame -= 1
@@ -146,8 +133,8 @@ class Unit:
 
         self.x += final_vx
         self.y += final_vy
-        self.x = np.clip(self.x, self.radius, MAP_SIZE - self.radius)
-        self.y = np.clip(self.y, self.radius, MAP_SIZE - self.radius)
+        self.x = np.clip(self.x, self.radius, cfg.MAP_SIZE - self.radius)
+        self.y = np.clip(self.y, self.radius, cfg.MAP_SIZE - self.radius)
 
 class TST(IntEnum):
     HealthRegen  = 0
@@ -189,8 +176,8 @@ class TankStats:
 class Tank(Unit):
     def __init__(
         self,
-        x=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
-        y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
+        x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+        y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
         max_hp=50.0,
         score=0,
     ):
@@ -240,8 +227,8 @@ class Tank(Unit):
 
     def calc_stats_properties(self):
         # Health Regen
-        self.slow_health_regen = (0.03 + 0.12 * self.stats[TST.HealthRegen]) / 30 / FPS
-        self.fast_health_regen = FAST_REGEN_LIST[self.stats[TST.HealthRegen]] / FPS
+        self.slow_health_regen = (0.03 + 0.12 * self.stats[TST.HealthRegen]) / 30 / cfg.FPS
+        self.fast_health_regen = FAST_REGEN_LIST[self.stats[TST.HealthRegen]] / cfg.FPS
 
         # Max Health
         old_max_hp = self.max_hp
@@ -264,7 +251,7 @@ class Tank(Unit):
         self.bullet_damage = 7.0 + self.stats[TST.BulletDamage] * 3.0
 
         # Reload
-        self.reload_frames = (0.6 - self.stats[TST.Reload] * 0.04) * FPS
+        self.reload_frames = (0.6 - self.stats[TST.Reload] * 0.04) * cfg.FPS
 
         # Movement Speed
         self.v_scale = 1.0 + self.stats[TST.Speed] * 0.03 - (self.level - 1) * 0.001 # not sure
@@ -303,10 +290,10 @@ class DiepIOEnvBasic(gym.Env):
 
         if self.render_mode:
             pygame.init()
-            self.screen = pygame.display.set_mode((SCREEN_SIZE, SCREEN_SIZE))
+            self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
             self.clock = pygame.time.Clock()
             self.observation_space = spaces.Box(
-                low=0, high=255, shape=(SCREEN_SIZE, SCREEN_SIZE, 3), dtype=np.uint8
+                low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8
             )
 
         self.reset()
@@ -315,8 +302,8 @@ class DiepIOEnvBasic(gym.Env):
         self.step_count = 0
         self.tanks = [
             Tank(
-                x=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
-                y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
+                x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+                y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
                 max_hp=50.0,
                 score=0,
             )
@@ -340,7 +327,7 @@ class DiepIOEnvBasic(gym.Env):
 
     def _render_frame(self, agent_id):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
-        surface = pygame.Surface((SCREEN_SIZE, SCREEN_SIZE))
+        surface = pygame.Surface((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
         surface.fill((255, 255, 255))  # White background
 
         # Center on the agent
@@ -349,50 +336,50 @@ class DiepIOEnvBasic(gym.Env):
         observation_size = agent.observation_size
 
         # Calculate scale: SCREEN_SIZE pixels cover observation_size map units
-        grid_size = SCREEN_SIZE / observation_size  # e.g., 1000 / 40 = 25
-        screen_half = SCREEN_SIZE // 2  # 500
+        grid_size = cfg.SCREEN_SIZE / observation_size  # e.g., 1000 / 40 = 25
+        screen_half = cfg.SCREEN_SIZE // 2  # 500
 
         # Draw black rectangles for areas outside map boundaries
-        left_boundary = int(screen_half + (BOARDER_SIZE - center_x) * grid_size)  # x = BOARDER_SIZE
-        right_boundary = int(screen_half + (MAP_SIZE - BOARDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
-        top_boundary = int(screen_half + (BOARDER_SIZE - center_y) * grid_size)  # y = BOARDER_SIZE
-        bottom_boundary = int(screen_half + (MAP_SIZE - BOARDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
+        left_boundary = int(screen_half + (cfg.BOARDER_SIZE - center_x) * grid_size)  # x = BOARDER_SIZE
+        right_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BOARDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
+        top_boundary = int(screen_half + (cfg.BOARDER_SIZE - center_y) * grid_size)  # y = BOARDER_SIZE
+        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BOARDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
 
         black_color = (191, 191, 191)
         if left_boundary > 0:
-            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, SCREEN_SIZE))
-        if right_boundary < SCREEN_SIZE:
-            pygame.draw.rect(surface, black_color, (right_boundary, 0, SCREEN_SIZE - right_boundary, SCREEN_SIZE))
+            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, cfg.SCREEN_SIZE))
+        if right_boundary < cfg.SCREEN_SIZE:
+            pygame.draw.rect(surface, black_color, (right_boundary, 0, cfg.SCREEN_SIZE - right_boundary, cfg.SCREEN_SIZE))
         if top_boundary > 0:
-            pygame.draw.rect(surface, black_color, (0, 0, SCREEN_SIZE, top_boundary))
-        if bottom_boundary < SCREEN_SIZE:
-            pygame.draw.rect(surface, black_color, (0, bottom_boundary, SCREEN_SIZE, SCREEN_SIZE - bottom_boundary))
+            pygame.draw.rect(surface, black_color, (0, 0, cfg.SCREEN_SIZE, top_boundary))
+        if bottom_boundary < cfg.SCREEN_SIZE:
+            pygame.draw.rect(surface, black_color, (0, bottom_boundary, cfg.SCREEN_SIZE, cfg.SCREEN_SIZE - bottom_boundary))
 
         # Draw grid lines (spacing = 1 map units)
         grid_color = (150, 150, 150)  # Light gray
         # Calculate visible grid lines
         min_x = max(0, center_x - observation_size / 2)
-        max_x = min(MAP_SIZE, center_x + observation_size / 2)
+        max_x = min(cfg.MAP_SIZE, center_x + observation_size / 2)
         min_y = max(0, center_y - observation_size / 2)
-        max_y = min(MAP_SIZE, center_y + observation_size / 2)
+        max_y = min(cfg.MAP_SIZE, center_y + observation_size / 2)
         # Grid line positions
         x_grid = np.arange(np.ceil(min_x), np.floor(max_x) + 1)
         y_grid = np.arange(np.ceil(min_y), np.floor(max_y) + 1)
 
         left_boundary = int(screen_half + (0 - center_x) * grid_size)  # x = 0
-        right_boundary = int(screen_half + (MAP_SIZE - center_x) * grid_size)  # x = MAP_SIZE
+        right_boundary = int(screen_half + (cfg.MAP_SIZE - center_x) * grid_size)  # x = MAP_SIZE
         top_boundary = int(screen_half + (0 - center_y) * grid_size)  # y = 0
-        bottom_boundary = int(screen_half + (MAP_SIZE - center_y) * grid_size)  # y = MAP_SIZE
+        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - center_y) * grid_size)  # y = MAP_SIZE
 
         # Draw vertical lines
         for x in x_grid:
             pixel_x = int(screen_half + (x - center_x) * grid_size)
-            if 0 <= pixel_x < SCREEN_SIZE:
+            if 0 <= pixel_x < cfg.SCREEN_SIZE:
                 pygame.draw.line(surface, grid_color, (pixel_x, top_boundary), (pixel_x, bottom_boundary), 1)
         # Draw horizontal lines
         for y in y_grid:
             pixel_y = int(screen_half + (y - center_y) * grid_size)
-            if 0 <= pixel_y < SCREEN_SIZE:
+            if 0 <= pixel_y < cfg.SCREEN_SIZE:
                 pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
 
         # Draw all tanks
@@ -403,7 +390,7 @@ class DiepIOEnvBasic(gym.Env):
             rel_y = unit.y - center_y
             pixel_x = int(screen_half + rel_x * grid_size)
             pixel_y = int(screen_half + rel_y * grid_size)
-            if 0 <= pixel_x < SCREEN_SIZE and 0 <= pixel_y < SCREEN_SIZE:
+            if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
                 # Draw HP bar
                 hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)  # Scale with grid
                 pygame.draw.rect(
@@ -447,7 +434,7 @@ class DiepIOEnvBasic(gym.Env):
             magnitude = np.sqrt(dx**2 + dy**2)
             dx, dy = dx / magnitude, dy / magnitude
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        screen_half = SCREEN_SIZE // 2
+        screen_half = cfg.SCREEN_SIZE // 2
         self.tanks[0].angle = np.arctan2(screen_half - mouse_y, mouse_x - screen_half)
         return np.array([dx, dy, shoot], dtype=np.float32)
 
@@ -482,17 +469,17 @@ class DiepIOEnvBasic(gym.Env):
                         dx, dy = 1.0, 0.0
                         distance = 1.0
                     nx, ny = dx / distance, dy / distance
-                    max_v = BASE_MAX_VELOCITY * COLLISION_BOUNCE_V_SCALE
+                    max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
                     unit_i_hp_before_hit = self.tanks[i].hp
                     if self.tanks[i].invulberable_frame == 0:
                         self.tanks[i].collision_vx = nx * max_v
                         self.tanks[i].collision_vy = ny * max_v
-                        self.tanks[i].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
+                        self.tanks[i].collision_frame = cfg.COLLISION_BOUNCE_DECCELLERATE_FRAMES
                         self.tanks[i].recv_damage(self.tanks[j].body_damage, self.tanks[j].hp, self.tanks[j].type)
                     if self.tanks[j].invulberable_frame == 0:
                         self.tanks[j].collision_vx = -nx * max_v
                         self.tanks[j].collision_vy = -nx * max_v
-                        self.tanks[j].collision_frame = COLLISION_BOUNCE_DECCELLERATE_FRAMES
+                        self.tanks[j].collision_frame = cfg.COLLISION_BOUNCE_DECCELLERATE_FRAMES
                         self.tanks[j].recv_damage(self.tanks[i].body_damage, unit_i_hp_before_hit, self.tanks[i].type)
 
     def step(self, actions=None):
@@ -545,7 +532,7 @@ class DiepIOEnvBasic(gym.Env):
             self.screen.blit(surface, (0, 0))
 
         pygame.display.flip()
-        self.clock.tick(FPS)
+        self.clock.tick(cfg.FPS)
 
     def close(self):
         if self.render_mode:
