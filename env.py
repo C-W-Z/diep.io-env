@@ -19,28 +19,24 @@ class Unit:
         y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
         max_hp=50.0,
     ):
-        self.type = unit_type
-        self.x = x
-        self.y = y
-        self.max_hp = max_hp
-        self.hp = max_hp
-        self.v_scale = 1.0
-        self.radius = 1
-        self.rx = 1.0 # facing direction
-        self.ry = 0.0 # facing direction
-        self.vx = 0.0
-        self.vy = 0.0
-        self.ax = 0.0
-        self.ay = 0.0
-        self.collision_frame = 0
-        self.collision_vx = 0.0
-        self.collision_vy = 0.0
+        self.type        = unit_type
+        self.score       = 0
+        self.max_hp      = max_hp
+        self.hp          = max_hp
+        self.radius      = 1
+        self.v_scale     = 1.0
+        self.x , self.y  = x  , y
+        self.rx, self.ry = 1.0, 0.0 # facing direction
+        self.vx, self.vy = 0.0, 0.0
+        self.ax, self.ay = 0.0, 0.0
+        self.collision_vx, self.collision_vy = 0.0, 0.0
+        self.collision_frame    = 0
         self.invulberable_frame = 0
-        self.hp_regen_frame = 0
+        self.hp_regen_frame     = 0
         # Stats Properties
         self.slow_health_regen = 0.03 / 30 / cfg.FPS # per frame, == 3% per 30 second
         self.fast_health_regen = 0.0312 / cfg.FPS # per frame, == 3.12% per second
-        self.body_damage = 20.0
+        self.body_damage       = 20.0
 
     @property
     def alive(self):
@@ -86,12 +82,12 @@ class Unit:
         max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
 
         if dx != 0 or dy != 0:
-            magnitude = np.sqrt(dx**2 + dy**2)
+            magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
-            self.ax = dx * max_v / cfg.BASE_ACCELLERATION_FRAMES
-            self.ay = dy * max_v / cfg.BASE_ACCELLERATION_FRAMES
+            self.ax = dx * max_v / cfg.BASE_ACC_FRAMES
+            self.ay = dy * max_v / cfg.BASE_ACC_FRAMES
         else:
-            speed = np.sqrt(self.vx**2 + self.vy**2)
+            speed = np.hypot(self.vx, self.vy)
             if speed < 0.1:
                 self.vx = 0.0
                 self.vy = 0.0
@@ -99,12 +95,12 @@ class Unit:
                 self.ay = 0.0
             elif speed > 0:
                 dx, dy = -self.vx / speed, -self.vy / speed
-                self.ax = dx * max_v / cfg.BASE_DECCELLERATION_FRAMES
-                self.ay = dy * max_v / cfg.BASE_DECCELLERATION_FRAMES
+                self.ax = dx * max_v / cfg.BASE_DEC_FRAMES
+                self.ay = dy * max_v / cfg.BASE_DEC_FRAMES
 
         self.vx += self.ax
         self.vy += self.ay
-        normal_speed = np.sqrt(self.vx**2 + self.vy**2)
+        normal_speed = np.hypot(self.vx, self.vy)
         if normal_speed > max_v:
             self.vx = self.vx * max_v / normal_speed
             self.vy = self.vy * max_v / normal_speed
@@ -112,7 +108,7 @@ class Unit:
         # Handle collision motion
         collision_vx, collision_vy = 0.0, 0.0
         if self.collision_frame > 0:
-            factor = self.collision_frame / cfg.COLLISION_BOUNCE_DECCELLERATE_FRAMES
+            factor = self.collision_frame / cfg.COLLISION_BOUNCE_DEC_FRAMES
             collision_vx = self.collision_vx * factor
             collision_vy = self.collision_vy * factor
             self.collision_frame -= 1
@@ -424,12 +420,12 @@ class DiepIOEnvBasic(gym.Env):
         if keys[pygame.K_d]:
             dx += 1.0
         if dx != 0 or dy != 0:
-            magnitude = np.sqrt(dx**2 + dy**2)
+            magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
         mouse_x, mouse_y = pygame.mouse.get_pos()
         screen_half = cfg.SCREEN_SIZE // 2
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
-        magnitude = np.sqrt(rx**2 + ry**2)
+        magnitude = np.hypot(rx, ry)
         self.tanks[0].rx, self.tanks[0].ry = rx / magnitude, ry / magnitude
         return np.array([dx, dy, shoot], dtype=np.float32)
 
@@ -445,10 +441,10 @@ class DiepIOEnvBasic(gym.Env):
         if keys[pygame.K_RIGHT]:
             dx += 1.0
         if dx != 0 or dy != 0:
-            magnitude = np.sqrt(dx**2 + dy**2)
+            magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
         rx, ry = np.random.uniform(-1, 1), np.random.uniform(-1, 1)
-        magnitude = np.sqrt(rx**2 + ry**2)
+        magnitude = np.hypot(rx, ry)
         self.tanks[1].rx, self.tanks[1].ry = rx / magnitude, ry / magnitude
         return np.array([dx, dy, shoot], dtype=np.float32)
 
@@ -459,25 +455,26 @@ class DiepIOEnvBasic(gym.Env):
                     continue
                 dx = self.tanks[i].x - self.tanks[j].x
                 dy = self.tanks[i].y - self.tanks[j].y
-                distance = np.sqrt(dx**2 + dy**2)
+                distance = np.hypot(dx, dy)
                 radius_sum = self.tanks[i].radius + self.tanks[j].radius
-                if distance < radius_sum:
-                    if distance == 0:
-                        dx, dy = 1.0, 0.0
-                        distance = 1.0
-                    nx, ny = dx / distance, dy / distance
-                    max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
-                    unit_i_hp_before_hit = self.tanks[i].hp
-                    if self.tanks[i].invulberable_frame == 0:
-                        self.tanks[i].collision_vx = nx * max_v
-                        self.tanks[i].collision_vy = ny * max_v
-                        self.tanks[i].collision_frame = cfg.COLLISION_BOUNCE_DECCELLERATE_FRAMES
-                        self.tanks[i].recv_damage(self.tanks[j].body_damage, self.tanks[j].hp, self.tanks[j].type)
-                    if self.tanks[j].invulberable_frame == 0:
-                        self.tanks[j].collision_vx = -nx * max_v
-                        self.tanks[j].collision_vy = -nx * max_v
-                        self.tanks[j].collision_frame = cfg.COLLISION_BOUNCE_DECCELLERATE_FRAMES
-                        self.tanks[j].recv_damage(self.tanks[i].body_damage, unit_i_hp_before_hit, self.tanks[i].type)
+                if distance > radius_sum:
+                    continue
+                if distance == 0:
+                    dx, dy = 1.0, 0.0
+                    distance = 1.0
+                nx, ny = dx / distance, dy / distance
+                max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+                unit_i_hp_before_hit = self.tanks[i].hp
+                if self.tanks[i].invulberable_frame == 0:
+                    self.tanks[i].collision_vx = nx * max_v
+                    self.tanks[i].collision_vy = ny * max_v
+                    self.tanks[i].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+                    self.tanks[i].recv_damage(self.tanks[j].body_damage, self.tanks[j].hp, self.tanks[j].type)
+                if self.tanks[j].invulberable_frame == 0:
+                    self.tanks[j].collision_vx = -nx * max_v
+                    self.tanks[j].collision_vy = -nx * max_v
+                    self.tanks[j].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+                    self.tanks[j].recv_damage(self.tanks[i].body_damage, unit_i_hp_before_hit, self.tanks[i].type)
 
     def step(self, actions=None):
         self.step_count += 1
