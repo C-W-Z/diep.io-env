@@ -82,6 +82,16 @@ class Unit:
         self.hp_regen_frame = SLOW_HP_REGEN_FRAMES
         self.invulberable_frame = INVULNERABLE_FRAMES
 
+    def regen_health(self):
+        if not self.alive:
+            return
+        if self.hp_regen_frame > 0:
+            self.hp += self.max_hp * self.slow_health_regen
+        elif self.hp < self.max_hp:
+            self.hp += self.max_hp * self.fast_health_regen
+        if self.hp > self.max_hp:
+                self.hp = self.max_hp
+
     def update_counter(self):
         if self.invulberable_frame > 0:
             self.invulberable_frame -= 1
@@ -500,6 +510,7 @@ class DiepIOEnvBasic(gym.Env):
 
         for i, action in actions.items():
             if self.tanks[i].alive:
+                self.tanks[i].regen_health()
                 self.tanks[i].update_counter()
                 dx, dy, _ = action
                 self.tanks[i].update(dx, dy)
@@ -534,7 +545,7 @@ class DiepIOEnvBasic(gym.Env):
             self.screen.blit(surface, (0, 0))
 
         pygame.display.flip()
-        self.clock.tick(60)
+        self.clock.tick(FPS)
 
     def close(self):
         if self.render_mode:
