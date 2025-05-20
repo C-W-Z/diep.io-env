@@ -11,6 +11,7 @@ class UnitType(Enum):
     Bullet = 2
 
 # Constants
+FPS = 60
 MAP_SIZE = 80
 BOARDER_SIZE = 5
 BASE_MAX_VELOCITY = 0.5
@@ -21,7 +22,7 @@ BASE_ACCELLERATION_FRAMES = 20
 BASE_DECCELLERATION_FRAMES = 30
 INVULNERABLE_FRAMES = 5
 SCREEN_SIZE = 1000  # Pixel size of render window
-SLOW_HP_REGEN_FRAMES = 30 * 60  # 30 seconds in 60 fps
+SLOW_HP_REGEN_FRAMES = 30 * FPS  # 30 seconds in 60 fps
 
 class Unit:
     def __init__(
@@ -31,6 +32,7 @@ class Unit:
         y=np.random.uniform(BOARDER_SIZE, MAP_SIZE-BOARDER_SIZE),
         max_hp=50.0,
     ):
+        self.type = unit_type
         self.x = x
         self.y = y
         self.max_hp = max_hp
@@ -46,10 +48,10 @@ class Unit:
         self.collision_vx = 0.0
         self.collision_vy = 0.0
         self.invulberable_frame = 0
-        self.hp_regen_frames = 0
-        self.type = unit_type
-        # Stats
-        self.health_regen = 0
+        self.hp_regen_frame = 0
+        # Stats Properties
+        self.slow_health_regen = 0.03 / 30 / FPS # per frame, == 3% per 30 second
+        self.fast_health_regen = 0.0312 / FPS # per frame, == 3.12% per second
         self.body_damage = 20.0
 
     @property
@@ -69,25 +71,27 @@ class Unit:
             self.hp -= damage_scale * damage * collider_hp / body_dmg
         if self.hp < 0:
             self.hp = 0.0
-        self.hp_regen_frames = SLOW_HP_REGEN_FRAMES
+        self.hp_regen_frame = SLOW_HP_REGEN_FRAMES
         self.invulberable_frame = INVULNERABLE_FRAMES
 
     def update_counter(self):
         if self.invulberable_frame > 0:
             self.invulberable_frame -= 1
-        if self.hp_regen_frames > 0:
-            self.hp_regen_frames -= 1
+        if self.hp_regen_frame > 0:
+            self.hp_regen_frame -= 1
 
     def update(self, dx, dy):
         if not self.alive:
             return
 
         # Handle normal motion
+        max_v = BASE_MAX_VELOCITY * self.v_scale
+
         if dx != 0 or dy != 0:
             magnitude = np.sqrt(dx**2 + dy**2)
             dx, dy = dx / magnitude, dy / magnitude
-            self.ax = dx * BASE_MAX_VELOCITY / BASE_ACCELLERATION_FRAMES
-            self.ay = dy * BASE_MAX_VELOCITY / BASE_ACCELLERATION_FRAMES
+            self.ax = dx * max_v / BASE_ACCELLERATION_FRAMES
+            self.ay = dy * max_v / BASE_ACCELLERATION_FRAMES
         else:
             speed = np.sqrt(self.vx**2 + self.vy**2)
             if speed < 0.1:
@@ -97,13 +101,12 @@ class Unit:
                 self.ay = 0.0
             elif speed > 0:
                 dx, dy = -self.vx / speed, -self.vy / speed
-                self.ax = dx * BASE_MAX_VELOCITY / BASE_DECCELLERATION_FRAMES
-                self.ay = dy * BASE_MAX_VELOCITY / BASE_DECCELLERATION_FRAMES
+                self.ax = dx * max_v / BASE_DECCELLERATION_FRAMES
+                self.ay = dy * max_v / BASE_DECCELLERATION_FRAMES
 
         self.vx += self.ax
         self.vy += self.ay
         normal_speed = np.sqrt(self.vx**2 + self.vy**2)
-        max_v = BASE_MAX_VELOCITY * self.v_scale
         if normal_speed > max_v:
             self.vx = self.vx * max_v / normal_speed
             self.vy = self.vy * max_v / normal_speed
@@ -128,6 +131,65 @@ class Unit:
         self.x = np.clip(self.x, self.radius, MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, MAP_SIZE - self.radius)
 
+class TankStats:
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.health_regen = 0
+        self.max_health = 0
+        self.body_damage = 0
+        self.bullet_speed = 0
+        self.bullet_penetration = 0
+        self.bullet_damage = 0
+        self.reload = 0
+        self.movement_speed = 0
+
+    def add_point(self, i: int):
+        if i == 0:
+            if self.health_regen < 7:
+                self.health_regen += 1
+            else:
+                return False
+        elif i == 1:
+            if self.max_health < 7:
+                self.max_health += 1
+            else:
+                return False
+        elif i == 2:
+            if self.body_damage < 7:
+                self.body_damage += 1
+            else:
+                return False
+        elif i == 3:
+            if self.bullet_speed < 7:
+                self.bullet_speed += 1
+            else:
+                return False
+        elif i == 4:
+            if self.bullet_penetration < 7:
+                self.bullet_penetration += 1
+            else:
+                return False
+        elif i == 5:
+            if self.bullet_damage < 7:
+                self.bullet_damage += 1
+            else:
+                return False
+        elif i == 6:
+            if self.reload < 7:
+                self.reload += 1
+            else:
+                return False
+        elif i == 7:
+            if self.movement_speed < 7:
+                self.movement_speed += 1
+            else:
+                return False
+        else:
+            return False
+        return True
+
 class Tank(Unit):
     def __init__(
         self,
@@ -143,7 +205,95 @@ class Tank(Unit):
             max_hp=max_hp
         )
         self.score = score
-        self.observation_size = 40.0
+        self.level = self.score2level(self.score)
+        self.skill_points = self.level2sp(self.level)
+        self.stats = TankStats()
+        self.calc_stats_properties()
+
+    def add_score(self, score):
+        self.score += score
+        old_level = self.level
+        self.level = self.score2level(self.score)
+        self.skill_points += self.level2sp(self.level) - self.level2sp(old_level)
+        self.calc_stats_properties()
+
+    def add_points(self, i: int):
+        if self.skill_points == 0:
+            return False
+        if self.stats.add_point(i):
+            self.skill_points -= 1
+            self.calc_stats_properties()
+            return True
+        return False
+
+    @staticmethod
+    def score2level(score: int):
+        exp_list = [
+            0, 0, 4, 13, 28, 50, 78, 113, 157, 211, 275, 350, 437, 538, 655, 787, 938, 1109, 1301, 1516, 1757, 2026, 2325,
+            2658, 3026, 3433, 3883, 4379, 4925, 5525, 6184, 6907, 7698, 8537, 9426, 10368, 11367, 12426, 13549, 14730, 16000,
+            17337, 18754, 20256, 21849, 23536
+        ]
+        level = 1
+        for i, exp in enumerate(exp_list):
+            if score < exp:
+                break
+            level = i
+        return level
+
+    @staticmethod
+    def level2sp(level: int): # level to skill points
+        if level <= 28:
+            return level - 1
+        else:
+            return 27 + (level - 27) // 3
+
+    def calc_stats_properties(self):
+        # Health Regen
+        self.slow_health_regen = (0.03 + 0.12 * self.stats.health_regen) / 30 / FPS
+        fast_regen_list = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
+        self.fast_health_regen = fast_regen_list[self.stats.health_regen] / FPS
+
+        # Max Health
+        old_max_hp = self.max_hp
+        self.max_hp = 50.0 + 2 * (self.level - 1) + self.stats.max_health * 20.0
+        if self.max_hp > old_max_hp:
+            self.hp += self.max_hp - old_max_hp
+        elif self.hp > self.max_hp:
+            self.hp = self.max_hp
+
+        # Body Damage
+        self.body_damage = 20.0 + self.stats.body_damage * 4.0
+
+        # Bullet Speed
+        self.bullet_v_scale = 2.0 # TODO
+
+        # Bullet Penetration
+        self.bullet_max_hp = 2.0 + self.stats.bullet_penetration * 1.5
+
+        # Bullet Damage
+        self.bullet_damage = 7.0 + self.stats.bullet_damage * 3.0
+
+        # Reload
+        self.reload_frames = (0.6 - self.stats.reload * 0.04) * FPS
+
+        # Movement Speed
+        self.v_scale = 1.0 + self.stats.movement_speed * 0.03 - (self.level - 1) * 0.001 # not sure
+
+        # ===== Hidden Properties =====
+
+        # tank size
+        self.radius = 1.0 * np.pow(1.01, (self.level - 1))
+
+        # bullet size
+        # self.bullet_radius = ? * np.pow(1.01, (self.level - 1))
+
+        # Recoil
+
+        # FOV
+        self.observation_size = 40.0 + (self.level - 1) * 10.0 / 44
+
+        # Knockback Resistance
+        # self.stats.body_damage, self.stats.movement_speed
 
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
