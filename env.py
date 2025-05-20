@@ -407,7 +407,7 @@ class DiepIOEnvBasic(gym.Env):
                     surface, (127, 127, 127),
                     (pixel_x, pixel_y),
                     (end_x, end_y),
-                    grid_size
+                    int(grid_size)
                 )
                 # Draw body
                 color = (0, 127, 255) if i == 0 else (255, 0, 0)
