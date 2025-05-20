@@ -24,6 +24,14 @@ INVULNERABLE_FRAMES = 5
 SCREEN_SIZE = 1000  # Pixel size of render window
 SLOW_HP_REGEN_FRAMES = 30 * FPS  # 30 seconds in 60 fps
 
+EXP_LIST = [
+    0, 0, 4, 13, 28, 50, 78, 113, 157, 211, 275, 350, 437, 538, 655, 787, 938, 1109, 1301, 1516, 1757, 2026, 2325,
+    2658, 3026, 3433, 3883, 4379, 4925, 5525, 6184, 6907, 7698, 8537, 9426, 10368, 11367, 12426, 13549, 14730, 16000,
+    17337, 18754, 20256, 21849, 23536
+]
+RESPAWN_LEVEL_LIST = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 22]
+FAST_REGEN_LIST = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
+
 class Unit:
     def __init__(
         self,
@@ -228,13 +236,8 @@ class Tank(Unit):
 
     @staticmethod
     def score2level(score: int):
-        exp_list = [
-            0, 0, 4, 13, 28, 50, 78, 113, 157, 211, 275, 350, 437, 538, 655, 787, 938, 1109, 1301, 1516, 1757, 2026, 2325,
-            2658, 3026, 3433, 3883, 4379, 4925, 5525, 6184, 6907, 7698, 8537, 9426, 10368, 11367, 12426, 13549, 14730, 16000,
-            17337, 18754, 20256, 21849, 23536
-        ]
         level = 1
-        for i, exp in enumerate(exp_list):
+        for i, exp in enumerate(EXP_LIST):
             if score < exp:
                 break
             level = i
@@ -250,8 +253,7 @@ class Tank(Unit):
     def calc_stats_properties(self):
         # Health Regen
         self.slow_health_regen = (0.03 + 0.12 * self.stats.health_regen) / 30 / FPS
-        fast_regen_list = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
-        self.fast_health_regen = fast_regen_list[self.stats.health_regen] / FPS
+        self.fast_health_regen = FAST_REGEN_LIST[self.stats.health_regen] / FPS
 
         # Max Health
         old_max_hp = self.max_hp
@@ -424,10 +426,10 @@ class DiepIOEnvBasic(gym.Env):
                 end_x = pixel_x + unit.radius * 2 * grid_size * np.cos(unit.angle)
                 end_y = pixel_y - unit.radius * 2 * grid_size * np.sin(unit.angle)  # Flip for Pygame y-axis
                 pygame.draw.line(
-                    surface, (0, 0, 0),
+                    surface, (127, 127, 127),
                     (pixel_x, pixel_y),
                     (end_x, end_y),
-                    2
+                    grid_size
                 )
                 # Draw body
                 color = (0, 127, 255) if i == 0 else (255, 0, 0)
