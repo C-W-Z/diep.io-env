@@ -18,9 +18,10 @@ class Unit:
         x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
         y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
         max_hp=50.0,
+        score=0,
     ):
         self.type        = unit_type
-        self.score       = 0
+        self.score       = score
         self.max_hp      = max_hp
         self.hp          = max_hp
         self.radius      = 1
@@ -42,21 +43,23 @@ class Unit:
     def alive(self):
         return self.hp > 0
 
-    def recv_damage(self, damage: float, collider_hp: float, collider_type: UnitType):
-        body_dmg = self.body_damage * (0.25 if collider_type == UnitType.Bullet else 1.0)
+    def recv_damage(self, collider: "Unit"):
+        body_dmg = self.body_damage * (0.25 if collider.type == UnitType.Bullet else 1.0)
         damage_scale = 1.0
         if self.type == UnitType.Bullet:
             damage_scale = 0.25
-        elif self.type == UnitType.Tank and collider_type == UnitType.Tank:
+        elif self.type == UnitType.Tank and collider.type == UnitType.Tank:
             damage_scale = 1.5
-        if collider_hp >= body_dmg:
-            self.hp -= damage_scale * damage
+        if collider.hp >= body_dmg:
+            self.hp -= damage_scale * collider.body_damage
         else:
-            self.hp -= damage_scale * damage * collider_hp / body_dmg
+            self.hp -= damage_scale * collider.body_damage * collider.hp / body_dmg
         if self.hp < 0:
             self.hp = 0.0
-        self.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
-        self.invulberable_frame = cfg.INVULNERABLE_FRAMES
+            collider.score += min(self.score, cfg.EXP_LIST[-1])
+        else:
+            self.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
+            self.invulberable_frame = cfg.INVULNERABLE_FRAMES
 
     def regen_health(self):
         if not self.alive:
@@ -174,9 +177,9 @@ class Tank(Unit):
             unit_type=UnitType.Tank,
             x=x,
             y=y,
-            max_hp=max_hp
+            max_hp=max_hp,
+            score=score,
         )
-        self.score = score
         self.level = self.score2level(self.score)
         self.skill_points = self.level2sp(self.level)
         self.stats = TankStats()
@@ -469,12 +472,12 @@ class DiepIOEnvBasic(gym.Env):
                     self.tanks[i].collision_vx = nx * max_v
                     self.tanks[i].collision_vy = ny * max_v
                     self.tanks[i].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-                    self.tanks[i].recv_damage(self.tanks[j].body_damage, self.tanks[j].hp, self.tanks[j].type)
+                    self.tanks[i].recv_damage(self.tanks[j])
                 if self.tanks[j].invulberable_frame == 0:
                     self.tanks[j].collision_vx = -nx * max_v
                     self.tanks[j].collision_vy = -nx * max_v
                     self.tanks[j].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-                    self.tanks[j].recv_damage(self.tanks[i].body_damage, unit_i_hp_before_hit, self.tanks[i].type)
+                    self.tanks[j].recv_damage(self.tanks[i])
 
     def step(self, actions=None):
         self.step_count += 1
