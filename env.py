@@ -299,6 +299,8 @@ class DiepIOEnvBasic(gym.Env):
                 thing = self.all_things[thing_id]
                 if thing.type == UnitType.Tank:
                     self.__tank_on_tank(tank0, thing)
+                elif thing.type == UnitType.Polygon:
+                    self.__tank_on_polygon(tank0, thing)
 
 
     def __tank_on_tank(self, tank0, tank1):
@@ -331,6 +333,38 @@ class DiepIOEnvBasic(gym.Env):
             tank1.collision_vy = -nx * max_v
             tank1.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
             tank1.recv_damage(tank0)
+
+    def __tank_on_polygon(self, tank, poly):
+        if not (tank.alive and poly.alive):
+            return
+
+        dx = tank.x - poly.x
+        dy = tank.y - poly.y
+        distance = np.hypot(dx, dy)
+        radius_sum = tank.radius + poly.radius
+        if distance > radius_sum:
+            return
+
+        # avoid zero division
+        if distance == 0:
+            dx, dy = 1.0, 0.0
+            distance = 1.0
+        nx, ny = dx / distance, dy / distance
+        max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+
+        # Bounce and damage tank
+        if tank.invulberable_frame == 0:
+            tank.collision_vx    =  nx * max_v
+            tank.collision_vy    =  ny * max_v
+            tank.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            tank.recv_damage(poly)
+
+        # Bounce and damage polygon
+        if poly.invulberable_frame == 0:
+            poly.collision_vx    = -nx * max_v
+            poly.collision_vy    = -ny * max_v
+            poly.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            poly.recv_damage(tank)
 
     def step(self, actions=None):
         self.step_count += 1
