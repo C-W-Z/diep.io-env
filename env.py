@@ -262,6 +262,7 @@ class DiepIOEnvBasic(gym.Env):
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _handle_collisions(self):
+        # === 1. Tank ↔ Tank collisions ===
         for i in range(self.n_tanks):
             for j in range(i + 1, self.n_tanks):
                 if not (self.tanks[i].alive and self.tanks[j].alive):
@@ -289,6 +290,38 @@ class DiepIOEnvBasic(gym.Env):
                     self.tanks[j].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
                     self.tanks[j].recv_damage(self.tanks[i])
 
+        # === 2. Tank ↔ Polygon collisions ===
+        for tank in self.tanks:
+            for poly in self.polygons:
+                if not (tank.alive and poly.alive):
+                    continue
+                dx = tank.x - poly.x
+                dy = tank.y - poly.y
+                distance = np.hypot(dx, dy)
+                radius_sum = tank.radius + poly.radius
+                if distance > radius_sum:
+                    continue
+                # avoid zero division
+                if distance == 0:
+                    dx, dy = 1.0, 0.0
+                    distance = 1.0
+                nx, ny = dx / distance, dy / distance
+                max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+
+                # Bounce and damage tank
+                if tank.invulberable_frame == 0:
+                    tank.collision_vx    =  nx * max_v
+                    tank.collision_vy    =  ny * max_v
+                    tank.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+                    tank.recv_damage(poly)
+
+                # Bounce and damage polygon
+                if poly.invulberable_frame == 0:
+                    poly.collision_vx    = -nx * max_v
+                    poly.collision_vy    = -ny * max_v
+                    poly.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+                    poly.recv_damage(tank)
+
     def step(self, actions=None):
         self.step_count += 1
         rewards = {i: 0.0 for i in range(self.n_tanks)}
@@ -309,6 +342,12 @@ class DiepIOEnvBasic(gym.Env):
                 dx, dy, _ = action
                 self.tanks[i].move(dx, dy)
                 rewards[i] += 0.01
+
+        for poly in self.polygons:
+            if poly.alive:
+                poly.regen_health()
+                poly.update_counter()
+                poly.move(poly.collision_vx, poly.collision_vy)
 
         self._handle_collisions()
 
