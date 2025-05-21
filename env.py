@@ -392,6 +392,12 @@ class DiepIOEnvBasic(gym.Env):
 
                 rewards[i] += 0.01
 
+        for poly in self.polygons:
+            if poly.alive:
+                poly.regen_health()
+                poly.update_counter()
+                poly.move(poly.collision_vx, poly.collision_vy)
+
         self._handle_collisions()
 
         for i in range(self.n_tanks):
