@@ -5,11 +5,13 @@ import pygame
 import sys
 from config import config as cfg
 from tank import Tank
+from polygon import Polygon
 
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
         super(DiepIOEnvBasic, self).__init__()
         self.n_tanks = n_tanks
+        self.n_polygon = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = render_mode
         self.max_steps = 1000000
 
@@ -43,6 +45,15 @@ class DiepIOEnvBasic(gym.Env):
             )
             for _ in range(self.n_tanks)
         ]
+        self.polygons = [
+            Polygon(
+                x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+                y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+                side=np.random.randint(3, 6)
+            )
+            for _ in range(self.n_polygon)
+        ]
+
         obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
         if self.render_mode:
             self.render()
@@ -115,6 +126,63 @@ class DiepIOEnvBasic(gym.Env):
             pixel_y = int(screen_half + (y - center_y) * grid_size)
             if 0 <= pixel_y < cfg.SCREEN_SIZE:
                 pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
+
+        # Draw all polygons
+        for unit in self.polygons:
+            if not unit.alive:
+                continue
+            rel_x = unit.x - center_x
+            rel_y = unit.y - center_y
+            pixel_x = int(screen_half + rel_x * grid_size)
+            pixel_y = int(screen_half + rel_y * grid_size)
+
+            # Determine color and side length based on polygon side count
+            n_sides = int(round(unit.side))
+            if n_sides == 3:  # Triangle (red)
+                color = (255, 0, 0)
+                radius = cfg.POLYGON_RADIUS[3] * grid_size # Scale radius to screen
+            elif n_sides == 4:  # Square (yellow)
+                color = (255, 255, 0)
+                radius = cfg.POLYGON_RADIUS[4] * grid_size
+            elif n_sides == 5:  # Pentagon (dark blue)
+                color = (0, 0, 139)
+                radius = cfg.POLYGON_RADIUS[5] * grid_size
+            else:
+                continue  # Skip invalid polygons
+
+            # Calculate polygon vertices
+            vertices = []
+            for i in range(n_sides):
+                # Default angle for regular polygon, rotated by unit.angle
+                theta = (2 * np.pi * i / n_sides) + unit.angle
+                vx = radius * np.cos(theta)
+                vy = radius * np.sin(theta)
+                # Translate to polygon center
+                vertices.append((pixel_x + vx, pixel_y - vy))  # Invert y for Pygame
+
+            # Calculate bounding box of the polygon
+            vertices_x = [v[0] for v in vertices]
+            vertices_y = [v[1] for v in vertices]
+            min_x = min(vertices_x)
+            max_x = max(vertices_x)
+            min_y = min(vertices_y)
+            max_y = max(vertices_y)
+
+            # Check if the polygon's bounding box intersects with the screen
+            if (max_x < 0 or min_x >= cfg.SCREEN_SIZE or
+                max_y < 0 or min_y >= cfg.SCREEN_SIZE):
+                continue  # Polygon is completely outside the screen
+
+            # Draw HP bar if the polygon's center is on-screen or near the edge
+            if -grid_size <= pixel_x <= cfg.SCREEN_SIZE + grid_size and -grid_size <= pixel_y <= cfg.SCREEN_SIZE + grid_size:
+                hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)
+                pygame.draw.rect(
+                    surface, (0, 216, 0),
+                    (pixel_x - grid_size * 1, pixel_y + grid_size * 1.2, hp_width, 5)
+                )
+
+            # Draw polygon
+            pygame.draw.polygon(surface, color, vertices)
 
         # Draw all tanks
         for i, unit in enumerate(self.tanks):

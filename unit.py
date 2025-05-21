@@ -10,18 +10,19 @@ class UnitType(Enum):
 class Unit:
     def __init__(
         self,
-        unit_type=UnitType.Polygon,
-        x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
-        y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+        unit_type,
+        x,
+        y,
         max_hp=50.0,
         body_damage=8.0,
+        radius=1.0,
         score=0,
     ):
         self.type        = unit_type
         self.score       = score
         self.max_hp      = max_hp
         self.hp          = max_hp
-        self.radius      = 1
+        self.radius      = radius
         self.v_scale     = 1.0
         self.x , self.y  = x  , y
         self.rx, self.ry = 1.0, 0.0 # facing direction

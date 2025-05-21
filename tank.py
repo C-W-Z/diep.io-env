@@ -43,8 +43,8 @@ class TankStats:
 class Tank(Unit):
     def __init__(
         self,
-        x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
-        y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+        x,
+        y,
         max_hp=50.0,
         score=0,
     ):
