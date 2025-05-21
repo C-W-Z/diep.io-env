@@ -289,7 +289,7 @@ class DiepIOEnvBasic(gym.Env):
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _handle_collisions(self):
-        # handle collisions for all tanks
+        # handle collisions for all tanks & polygons
         # TODO: put bullet collisions in another function I guess
         for i in range(self.n_tanks):
             tank0 = self.tanks[i]
@@ -301,6 +301,15 @@ class DiepIOEnvBasic(gym.Env):
                     self.__tank_on_tank(tank0, thing)
                 elif thing.type == UnitType.Polygon:
                     self.__tank_on_polygon(tank0, thing)
+
+        for i in range(self.n_polygons):
+            poly0 = self.polygons[i]
+            nearby_id = self.colhash.nearby(poly0.x, poly0.y, poly0.id)
+
+            for thing_id in nearby_id:
+                thing = self.all_things[thing_id]
+                if thing.type == UnitType.Polygon:
+                    self.__polygon_on_polygon(poly0, thing)
 
 
     def __tank_on_tank(self, tank0, tank1):
@@ -365,6 +374,9 @@ class DiepIOEnvBasic(gym.Env):
             poly.collision_vy    = -ny * max_v
             poly.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
             poly.recv_damage(tank)
+
+    def __polygon_on_polygon(self, poly0, poly1):
+        return
 
     def step(self, actions=None):
         self.step_count += 1
