@@ -3,13 +3,18 @@ import numpy as np
 from gymnasium import spaces
 import pygame
 import sys
+from typing import Dict, Union
+
 from config import config as cfg
+from unit import UnitType
 from tank import Tank
 from polygon import Polygon
+from collision import CollisionHash
 
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
         super(DiepIOEnvBasic, self).__init__()
+
         self.n_tanks = n_tanks
         self.n_polygons = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = render_mode
@@ -36,6 +41,13 @@ class DiepIOEnvBasic(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.step_count = 0
+
+        # Mapping of ID -> unit
+        self.all_things: Dict[int, Union[Tank, Polygon]] = {}
+
+        # Collision registry
+        self.colhash = CollisionHash(cfg.BORDER_SIZE + cfg.MAP_SIZE, cfg.MAP_GRID)
+
         self.tanks = [
             Tank(
                 x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
@@ -47,12 +59,27 @@ class DiepIOEnvBasic(gym.Env):
         ]
         self.polygons = [
             Polygon(
-                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
-                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
                 side=np.random.randint(3, 6)
             )
             for _ in range(self.n_polygons)
         ]
+
+        # add all objects to the map
+        # TODO: remove separate lists and just use self.everything
+        for tank in self.tanks:
+            self.all_things[tank.id] = tank
+
+        for poly in self.polygons:
+            self.all_things[poly.id] = poly
+
+        # add all objects to the collision registry
+        for tank in self.tanks:
+            self.colhash.add(tank.x, tank.y, tank.id)
+
+        for poly in self.polygons:
+            self.colhash.add(poly.x, poly.y, poly.id)
 
         obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
         if self.render_mode:
@@ -262,32 +289,48 @@ class DiepIOEnvBasic(gym.Env):
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _handle_collisions(self):
+        # handle collisions for all tanks
+        # TODO: put bullet collisions in another function I guess
         for i in range(self.n_tanks):
-            for j in range(i + 1, self.n_tanks):
-                if not (self.tanks[i].alive and self.tanks[j].alive):
-                    continue
-                dx = self.tanks[i].x - self.tanks[j].x
-                dy = self.tanks[i].y - self.tanks[j].y
-                distance = np.hypot(dx, dy)
-                radius_sum = self.tanks[i].radius + self.tanks[j].radius
-                if distance > radius_sum:
-                    continue
-                if distance == 0:
-                    dx, dy = 1.0, 0.0
-                    distance = 1.0
-                nx, ny = dx / distance, dy / distance
-                max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
-                unit_i_hp_before_hit = self.tanks[i].hp
-                if self.tanks[i].invulberable_frame == 0:
-                    self.tanks[i].collision_vx = nx * max_v
-                    self.tanks[i].collision_vy = ny * max_v
-                    self.tanks[i].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-                    self.tanks[i].recv_damage(self.tanks[j])
-                if self.tanks[j].invulberable_frame == 0:
-                    self.tanks[j].collision_vx = -nx * max_v
-                    self.tanks[j].collision_vy = -nx * max_v
-                    self.tanks[j].collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-                    self.tanks[j].recv_damage(self.tanks[i])
+            tank0 = self.tanks[i]
+            nearby_id = self.colhash.nearby(tank0.x, tank0.y, tank0.id)
+
+            for thing_id in nearby_id:
+                thing = self.all_things[thing_id]
+                if thing.type == UnitType.Tank:
+                    self.__tank_on_tank(tank0, thing)
+
+
+    def __tank_on_tank(self, tank0, tank1):
+        if not (tank0.alive and tank1.alive):
+            return
+
+        dx = tank0.x - tank1.x
+        dy = tank0.y - tank1.y
+        distance = np.hypot(dx, dy)
+        radius_sum = tank0.radius + tank1.radius
+        if distance > radius_sum:
+            return
+
+        if distance == 0:
+            dx, dy = 1.0, 0.0
+            distance = 1.0
+
+        nx, ny = dx / distance, dy / distance
+        max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+        unit_i_hp_before_hit = tank0.hp
+
+        if tank0.invulberable_frame == 0:
+            tank0.collision_vx = nx * max_v
+            tank0.collision_vy = ny * max_v
+            tank0.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            tank0.recv_damage(tank1)
+
+        if tank1.invulberable_frame == 0:
+            tank1.collision_vx = -nx * max_v
+            tank1.collision_vy = -nx * max_v
+            tank1.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            tank1.recv_damage(tank0)
 
     def step(self, actions=None):
         self.step_count += 1
@@ -303,11 +346,16 @@ class DiepIOEnvBasic(gym.Env):
                 actions[1] = self._get_random_input()
 
         for i, action in actions.items():
-            if self.tanks[i].alive:
-                self.tanks[i].regen_health()
-                self.tanks[i].update_counter()
+            tank = self.tanks[i]
+            if tank.alive:
+                tank.regen_health()
+                tank.update_counter()
                 dx, dy, _ = action
-                self.tanks[i].move(dx, dy)
+                old_x, old_y = tank.x, tank.y
+
+                tank.move(dx, dy)
+                self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
+
                 rewards[i] += 0.01
 
         self._handle_collisions()

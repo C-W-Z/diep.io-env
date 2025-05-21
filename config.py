@@ -4,12 +4,13 @@ from dataclasses import dataclass
 class Config:
     # Constants
     FPS                         = 60
-    SCREEN_SIZE                 = 1000  # Pixel size of render window
+    SCREEN_SIZE                 = 1000      # Pixel size of render window
     MAP_SIZE                    = 80
     BORDER_SIZE                 = 5
-    BASE_MAX_VELOCITY           = 10 / FPS # 10 grids per second
-    BASE_ACC_FRAMES             = 10  # Acceleration
-    BASE_DEC_FRAMES             = 60  # Deceleration
+    MAP_GRID                    = 32        # Size of collision grid
+    BASE_MAX_VELOCITY           = 10 / FPS  # 10 grids per second
+    BASE_ACC_FRAMES             = 10        # Acceleration
+    BASE_DEC_FRAMES             = 60        # Deceleration
     COLLISION_BOUNCE_V_SCALE    = 1.0
     COLLISION_BOUNCE_DEC_FRAMES = 40
     INVULNERABLE_FRAMES         = 5

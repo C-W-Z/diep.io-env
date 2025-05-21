@@ -1,6 +1,7 @@
 import numpy as np
 from enum import Enum
 from config import config as cfg
+import itertools
 
 class UnitType(Enum):
     Tank = 0
@@ -8,6 +9,8 @@ class UnitType(Enum):
     Bullet = 2
 
 class Unit:
+    id_iter = itertools.count()
+
     def __init__(
         self,
         unit_type,
@@ -18,6 +21,8 @@ class Unit:
         radius=1.0,
         score=0,
     ):
+        self.id          = next(Unit.id_iter)
+
         self.type        = unit_type
         self.score       = score
         self.max_hp      = max_hp
