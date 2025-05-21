@@ -6,7 +6,7 @@ class Config:
     FPS                         = 60
     SCREEN_SIZE                 = 1000  # Pixel size of render window
     MAP_SIZE                    = 80
-    BOARDER_SIZE                = 5
+    BORDER_SIZE                 = 5
     BASE_MAX_VELOCITY           = 10 / FPS # 10 grids per second
     BASE_ACC_FRAMES             = 10  # Acceleration
     BASE_DEC_FRAMES             = 60  # Deceleration

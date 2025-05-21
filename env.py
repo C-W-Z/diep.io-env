@@ -38,8 +38,8 @@ class DiepIOEnvBasic(gym.Env):
         self.step_count = 0
         self.tanks = [
             Tank(
-                x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
-                y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
                 max_hp=50.0,
                 score=0,
             )
@@ -47,8 +47,8 @@ class DiepIOEnvBasic(gym.Env):
         ]
         self.polygons = [
             Polygon(
-                x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
-                y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
                 side=np.random.randint(3, 6)
             )
             for _ in range(self.n_polygons)
@@ -85,10 +85,10 @@ class DiepIOEnvBasic(gym.Env):
         screen_half = cfg.SCREEN_SIZE // 2  # 500
 
         # Draw black rectangles for areas outside map boundaries
-        left_boundary = int(screen_half + (cfg.BOARDER_SIZE - center_x) * grid_size)  # x = BOARDER_SIZE
-        right_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BOARDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
-        top_boundary = int(screen_half + (cfg.BOARDER_SIZE - center_y) * grid_size)  # y = BOARDER_SIZE
-        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BOARDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
+        left_boundary = int(screen_half + (cfg.BORDER_SIZE - center_x) * grid_size)  # x = BOARDER_SIZE
+        right_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BORDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
+        top_boundary = int(screen_half + (cfg.BORDER_SIZE - center_y) * grid_size)  # y = BOARDER_SIZE
+        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BORDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
 
         black_color = (191, 191, 191)
         if left_boundary > 0:
