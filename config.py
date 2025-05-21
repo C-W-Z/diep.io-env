@@ -23,7 +23,7 @@ class Config:
     RESPAWN_LEVEL_LIST = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 22]
     FAST_REGEN_LIST = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
 
-    N_POLYGON_SCALE             = 12.5 # polygon count = floor(n_tanks * POLYGON_SCALE)
+    N_POLYGON_SCALE             = 12.5 # n_polygons = floor(n_tanks * N_POLYGON_SCALE)
     POLYGON_RADIUS              = {3: 1.2, 4: 1.1, 5: 1.8}
     POLYGON_HP                  = {3: 30 , 4: 10 , 5: 100}
     POLYGON_BODY_DAMAGE         = {3: 8.0, 4: 8.0, 5: 12.0}

@@ -11,7 +11,7 @@ class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
         super(DiepIOEnvBasic, self).__init__()
         self.n_tanks = n_tanks
-        self.n_polygon = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
+        self.n_polygons = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = render_mode
         self.max_steps = 1000000
 
@@ -51,7 +51,7 @@ class DiepIOEnvBasic(gym.Env):
                 y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
                 side=np.random.randint(3, 6)
             )
-            for _ in range(self.n_polygon)
+            for _ in range(self.n_polygons)
         ]
 
         obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
