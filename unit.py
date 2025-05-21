@@ -1,0 +1,126 @@
+import numpy as np
+from enum import Enum
+from config import config as cfg
+
+class UnitType(Enum):
+    Tank = 0
+    Polygon = 1
+    Bullet = 2
+
+class Unit:
+    def __init__(
+        self,
+        unit_type=UnitType.Polygon,
+        x=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+        y=np.random.uniform(cfg.BOARDER_SIZE, cfg.MAP_SIZE-cfg.BOARDER_SIZE),
+        max_hp=50.0,
+        body_damage=8.0,
+        score=0,
+    ):
+        self.type        = unit_type
+        self.score       = score
+        self.max_hp      = max_hp
+        self.hp          = max_hp
+        self.radius      = 1
+        self.v_scale     = 1.0
+        self.x , self.y  = x  , y
+        self.rx, self.ry = 1.0, 0.0 # facing direction
+        self.vx, self.vy = 0.0, 0.0
+        self.ax, self.ay = 0.0, 0.0
+        self.collision_vx, self.collision_vy = 0.0, 0.0
+        self.collision_frame    = 0
+        self.invulberable_frame = 0
+        self.hp_regen_frame     = 0
+        # Stats Properties
+        self.slow_health_regen = 0.03 / 30 / cfg.FPS # per frame, == 3% per 30 second
+        self.fast_health_regen = 0.0312 / cfg.FPS # per frame, == 3.12% per second
+        self.body_damage       = body_damage
+
+    @property
+    def alive(self):
+        return self.hp > 0
+
+    def recv_damage(self, collider: "Unit"):
+        body_dmg = self.body_damage * (0.25 if collider.type == UnitType.Bullet else 1.0)
+        damage_scale = 1.0
+        if self.type == UnitType.Bullet:
+            damage_scale = 0.25
+        elif self.type == UnitType.Tank and collider.type == UnitType.Tank:
+            damage_scale = 1.5
+        if collider.hp >= body_dmg:
+            self.hp -= damage_scale * collider.body_damage
+        else:
+            self.hp -= damage_scale * collider.body_damage * collider.hp / body_dmg
+        if self.hp < 0:
+            self.hp = 0.0
+            collider.score += min(self.score, cfg.EXP_LIST[-1])
+        else:
+            self.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
+            self.invulberable_frame = cfg.INVULNERABLE_FRAMES
+
+    def regen_health(self):
+        if not self.alive:
+            return
+        if self.hp_regen_frame > 0:
+            self.hp += self.max_hp * self.slow_health_regen
+        elif self.hp < self.max_hp:
+            self.hp += self.max_hp * self.fast_health_regen
+        if self.hp > self.max_hp:
+                self.hp = self.max_hp
+
+    def update_counter(self):
+        if self.invulberable_frame > 0:
+            self.invulberable_frame -= 1
+        if self.hp_regen_frame > 0:
+            self.hp_regen_frame -= 1
+
+    def move(self, dx: float, dy: float):
+        if not self.alive:
+            return
+
+        # Handle normal motion
+        max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
+
+        if dx != 0 or dy != 0:
+            magnitude = np.hypot(dx, dy)
+            dx, dy = dx / magnitude, dy / magnitude
+            self.ax = dx * max_v / cfg.BASE_ACC_FRAMES
+            self.ay = dy * max_v / cfg.BASE_ACC_FRAMES
+        else:
+            speed = np.hypot(self.vx, self.vy)
+            if speed < 0.1:
+                self.vx = 0.0
+                self.vy = 0.0
+                self.ax = 0.0
+                self.ay = 0.0
+            elif speed > 0:
+                dx, dy = -self.vx / speed, -self.vy / speed
+                self.ax = dx * max_v / cfg.BASE_DEC_FRAMES
+                self.ay = dy * max_v / cfg.BASE_DEC_FRAMES
+
+        self.vx += self.ax
+        self.vy += self.ay
+        normal_speed = np.hypot(self.vx, self.vy)
+        if normal_speed > max_v:
+            self.vx = self.vx * max_v / normal_speed
+            self.vy = self.vy * max_v / normal_speed
+
+        # Handle collision motion
+        collision_vx, collision_vy = 0.0, 0.0
+        if self.collision_frame > 0:
+            factor = self.collision_frame / cfg.COLLISION_BOUNCE_DEC_FRAMES
+            collision_vx = self.collision_vx * factor
+            collision_vy = self.collision_vy * factor
+            self.collision_frame -= 1
+        else:
+            self.collision_frame = 0
+            self.collision_vx = 0.0
+            self.collision_vy = 0.0
+
+        final_vx = self.vx + collision_vx
+        final_vy = self.vy + collision_vy
+
+        self.x += final_vx
+        self.y += final_vy
+        self.x = np.clip(self.x, self.radius, cfg.MAP_SIZE - self.radius)
+        self.y = np.clip(self.y, self.radius, cfg.MAP_SIZE - self.radius)
