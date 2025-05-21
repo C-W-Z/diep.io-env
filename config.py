@@ -7,10 +7,10 @@ class Config:
     SCREEN_SIZE                 = 1000  # Pixel size of render window
     MAP_SIZE                    = 80
     BOARDER_SIZE                = 5
-    BASE_MAX_VELOCITY           = 0.5
-    BASE_ACC_FRAMES             = 20  # Acceleration
-    BASE_DEC_FRAMES             = 30  # Deceleration
-    COLLISION_BOUNCE_V_SCALE    = 0.75
+    BASE_MAX_VELOCITY           = 10 / FPS # 10 grids per second
+    BASE_ACC_FRAMES             = 10  # Acceleration
+    BASE_DEC_FRAMES             = 60  # Deceleration
+    COLLISION_BOUNCE_V_SCALE    = 1.0
     COLLISION_BOUNCE_DEC_FRAMES = 40
     INVULNERABLE_FRAMES         = 5
     SLOW_HP_REGEN_FRAMES        = 30 * FPS  # 30 seconds in 60 fps

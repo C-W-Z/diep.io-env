@@ -88,7 +88,7 @@ class Unit:
             self.ay = dy * max_v / cfg.BASE_ACC_FRAMES
         else:
             speed = np.hypot(self.vx, self.vy)
-            if speed < 0.1:
+            if speed < 1e-6:
                 self.vx = 0.0
                 self.vy = 0.0
                 self.ax = 0.0
