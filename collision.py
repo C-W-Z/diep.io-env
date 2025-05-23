@@ -30,7 +30,7 @@ class CollisionHash:
             if bullet_owner_id is None:
                 nearby_id.remove(ID) # Not a bullet: don't collide with yourself
         except ValueError:
-            print(f"Tried to remove {ID} from {nearby_id}")
+            print(f"[WARN] CollisionHash: Tried to remove {ID} from {nearby_id}")
 
         if bullet_owner_id in nearby_id:
             nearby_id.remove(bullet_owner_id) # Bullet: don't collide with the tank that shot it
@@ -68,5 +68,5 @@ class CollisionHash:
     # for debugging
     def where(self, x, y):
         i, j = self.coord2grid(x, y)
-        print(f"Grid location: {i}, {j}")
-        print(f"Content: {self.grid[i, j]}")
+        print(f"[DEBUG] Grid location: {i}, {j}")
+        print(f"[DEBUG] Content: {self.grid[i, j]}")
