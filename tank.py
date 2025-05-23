@@ -110,10 +110,11 @@ class Tank(Unit):
         self.body_damage = 20.0 + self.stats[TST.BodyDamage] * 4.0
 
         # Bullet Speed
-        self.bullet_v_scale = 0.2 # TODO
+        self.bullet_v_scale = cfg.BASE_BULLET_V_SCALE # TODO
 
         # Bullet Penetration
-        self.bullet_max_hp = 2.0 + self.stats[TST.BulletPen] * 1.5
+        # self.bullet_max_hp = 2.0 + self.stats[TST.BulletPen] * 1.5
+        self.bullet_max_hp = 2.0 + 7 * 1.5
 
         # Bullet Damage
         self.bullet_damage = 7.0 + self.stats[TST.BulletDamage] * 3.0

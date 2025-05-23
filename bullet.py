@@ -51,8 +51,8 @@ class Bullet(Unit):
         self.y += self.ry * self.v_scale
 
         # remove bullet if it goes out of map bounds
-        min_coord = self.radius
-        max_coord = cfg.MAP_SIZE - self.radius
+        min_coord = -self.radius
+        max_coord = cfg.MAP_SIZE + self.radius
         if not (min_coord <= self.x <= max_coord and min_coord <= self.y <= max_coord):
             return False
 

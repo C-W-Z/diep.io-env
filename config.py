@@ -3,18 +3,23 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Config:
     # Constants
-    FPS                         = 60
-    SCREEN_SIZE                 = 1000      # Pixel size of render window
-    MAP_SIZE                    = 80
-    BORDER_SIZE                 = 5
-    MAP_GRID                    = 32        # Size of collision grid
-    BASE_MAX_VELOCITY           = 10 / FPS  # 10 grids per second
-    BASE_ACC_FRAMES             = 10        # Acceleration
-    BASE_DEC_FRAMES             = 60        # Deceleration
-    COLLISION_BOUNCE_V_SCALE    = 1.0
-    COLLISION_BOUNCE_DEC_FRAMES = 40
-    INVULNERABLE_FRAMES         = 5
-    SLOW_HP_REGEN_FRAMES        = 30 * FPS  # 30 seconds in 60 fps
+    FPS                             = 60
+    SCREEN_SIZE                     = 1000      # Pixel size of render window
+    MAP_SIZE                        = 80
+    BORDER_SIZE                     = 5
+    MAP_GRID                        = 32        # Size of collision grid
+    BASE_MAX_VELOCITY               = 10 / FPS  # 10 grids per second
+    BASE_ACC_FRAMES                 = 10        # Acceleration
+    BASE_DEC_FRAMES                 = 60        # Deceleration
+    COLLISION_BOUNCE_V_SCALE        = 1.2
+    BULLET_BOUNCE_V_SCALE           = 1.0
+    BULLET_COLLIDER_BOUNCE_V_SCALE  = 0.5
+    TANK_BOUNCE_V_SCALE             = 1.0
+    COLLISION_BOUNCE_DEC_FRAMES     = 20
+    BULLET_BOUNCE_DEC_FRAMES        = 10
+    TANK_BOUNCE_DEC_FRAMES          = 40
+    INVULNERABLE_FRAMES             = 6
+    SLOW_HP_REGEN_FRAMES            = 30 * FPS  # 30 seconds in 60 fps
 
     EXP_LIST = [
         0, 0, 4, 13, 28, 50, 78, 113, 157, 211, 275, 350, 437, 538, 655, 787, 938, 1109, 1301, 1516, 1757, 2026, 2325,
@@ -24,13 +29,15 @@ class Config:
     RESPAWN_LEVEL_LIST = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 15, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 22]
     FAST_REGEN_LIST = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
 
-    N_POLYGON_SCALE             = 12.5 # n_polygons = floor(n_tanks * N_POLYGON_SCALE)
-    POLYGON_SIDE_PROB           = {3: 0.2, 4: 0.7, 5: 0.1}
-    POLYGON_RADIUS              = {3: 1.2, 4: 1.1, 5: 1.8}
-    POLYGON_HP                  = {3: 30 , 4: 10 , 5: 100}
-    POLYGON_BODY_DAMAGE         = {3: 8.0, 4: 8.0, 5: 12.0}
-    POLYGON_SCORE               = {3: 25 , 4: 10 , 5: 130}
-    POLYGON_V_SCALE             = 0.1
-    POLYGON_ROTATE_SPEED        = 0.005
+    N_POLYGON_SCALE                 = 12.5 # n_polygons = floor(n_tanks * N_POLYGON_SCALE)
+    POLYGON_SIDE_PROB               = {3: 0.2, 4: 0.7, 5: 0.1}
+    POLYGON_RADIUS                  = {3: 1.2, 4: 1.1, 5: 1.8}
+    POLYGON_HP                      = {3: 30 , 4: 10 , 5: 100}
+    POLYGON_BODY_DAMAGE             = {3: 8.0, 4: 8.0, 5: 12.0}
+    POLYGON_SCORE                   = {3: 25 , 4: 10 , 5: 130}
+    POLYGON_V_SCALE                 = 0.1
+    POLYGON_ROTATE_SPEED            = 0.005
+
+    BASE_BULLET_V_SCALE             = 0.2
 
 config = Config()
