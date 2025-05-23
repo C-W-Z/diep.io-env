@@ -1,9 +1,21 @@
 import numpy as np
 from unit import Unit, UnitType
 from config import config as cfg
+from tank import Tank
 
 class Bullet(Unit):
-    def __init__(self, x, y, max_hp, bullet_damage, radius, rx, ry):
+    def __init__(
+        self,
+        x,
+        y,
+        max_hp,
+        bullet_damage,
+        radius,
+        tank: Tank,
+        rx,
+        ry,
+        v_scale,
+    ):
 
         super().__init__(
             unit_type=UnitType.Polygon,
@@ -15,5 +27,16 @@ class Bullet(Unit):
             score=0,
         )
 
+        self.tank = tank
         self.rx = rx
         self.ry = ry
+        self.v_scale = v_scale
+
+        self.slow_health_regen = 0
+        self.fast_health_regen = 0
+
+    def deal_damage(self, collider: "Unit", self_hp_before_hit = None):
+        super(Bullet, self).deal_damage(collider, self_hp_before_hit)
+        if self.score > 0:
+            self.tank.score += self.score
+            self.score = 0
