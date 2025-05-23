@@ -434,9 +434,10 @@ class DiepIOEnvBasic(gym.Env):
             if poly.alive:
                 poly.regen_health()
                 poly.update_counter()
+                poly.update_direction()
                 old_x, old_y = poly.x, poly.y
 
-                poly.move(poly.collision_vx, poly.collision_vy)
+                poly.move(poly.rx, poly.ry)
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
 
         self._handle_collisions()

@@ -29,5 +29,7 @@ class Config:
     POLYGON_HP                  = {3: 30 , 4: 10 , 5: 100}
     POLYGON_BODY_DAMAGE         = {3: 8.0, 4: 8.0, 5: 12.0}
     POLYGON_SCORE               = {3: 25 , 4: 10 , 5: 130}
+    POLYGON_V_SCALE             = 0.1
+    POLYGON_ROTATE_SPEED        = 0.005
 
 config = Config()

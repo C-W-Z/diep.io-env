@@ -3,7 +3,7 @@ from unit import Unit, UnitType
 from config import config as cfg
 
 class Polygon(Unit):
-    def __init__(self, x, y,side):
+    def __init__(self, x, y, side):
         self.side = side
         assert side in cfg.POLYGON_RADIUS, f"Invalid polygon side count: {side}"
 
@@ -18,3 +18,15 @@ class Polygon(Unit):
         )
 
         self.angle = np.random.uniform(-np.pi, np.pi)
+        self.rotate_dir = 1 if np.random.rand() < 0.5 else -1
+        self.v_scale = cfg.POLYGON_V_SCALE
+
+    def update_direction(self):
+        self.angle += self.rotate_dir * cfg.POLYGON_ROTATE_SPEED
+        if self.angle > 2 * np.pi:
+            self.angle -= 2 * np.pi
+        elif self.angle < -2 * np.pi:
+            self.angle += 2 * np.pi
+
+        self.rx = np.cos(self.angle)
+        self.ry = np.sin(self.angle)
