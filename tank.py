@@ -130,7 +130,7 @@ class Tank(Unit):
         self.radius = 1.0 * np.pow(1.01, (self.level - 1))
 
         # bullet size
-        # self.bullet_radius = ? * np.pow(1.01, (self.level - 1))
+        self.bullet_radius = 0.5 * np.pow(1.01, (self.level - 1))
 
         # Recoil
 
@@ -148,4 +148,3 @@ class Tank(Unit):
             self.hp_regen_frame -= 1
         if self.reload_counter > 0:
             self.reload_counter -= 1
-

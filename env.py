@@ -362,8 +362,9 @@ class DiepIOEnvBasic(gym.Env):
                 if dist > bullet.radius + thing.radius:
                     continue
                 # apply damage: bullet → thing, then penetration damage back to bullet
+                thing_hp_before_hit = thing.hp
                 bullet.deal_damage(thing)
-                thing.deal_damage(bullet)
+                thing.deal_damage(bullet, thing_hp_before_hit)
                 # if bullet HP ≤ 0 after penetration, remove it
                 if not bullet.alive:
                     self.bullets.remove(bullet)
@@ -477,7 +478,7 @@ class DiepIOEnvBasic(gym.Env):
                 actions[1] = self._get_random_input()
 
         for i, action in actions.items():
-            tank = self.tanks[i]
+            tank: Tank = self.tanks[i]
             if tank.alive:
                 tank.regen_health()
                 tank.update_counter()
@@ -497,7 +498,7 @@ class DiepIOEnvBasic(gym.Env):
                     y=by,
                     max_hp = tank.bullet_max_hp,
                     bullet_damage = tank.bullet_damage,
-                    radius = 0.2,
+                    radius = tank.bullet_radius,
                     tank = tank,
                     rx = tank.rx,
                     ry = -tank.ry,
