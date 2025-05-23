@@ -15,7 +15,7 @@ class CollisionHash:
 
     # fetch nearby units
     # Returns: a list of nearby units IDs
-    def nearby(self, x, y, ID, bullet_query=False):
+    def nearby(self, x, y, ID, bullet_owner_id=None):
         sz = self.grid.shape[0]
 
         i, j = self.coord2grid(x, y)
@@ -27,10 +27,14 @@ class CollisionHash:
                 if 0 <= ci < sz and 0 <= cj < sz:
                     nearby_id.extend(self.grid[ci, cj])
         try:
-            if not bullet_query:
-                nearby_id.remove(ID) # don't collide with yourself
+            if bullet_owner_id is None:
+                nearby_id.remove(ID) # Not a bullet: don't collide with yourself
         except ValueError:
             print(f"Tried to remove {ID} from {nearby_id}")
+
+        if bullet_owner_id in nearby_id:
+            nearby_id.remove(bullet_owner_id) # Bullet: don't collide with the tank that shot it
+
         return nearby_id
 
     # add a new unit

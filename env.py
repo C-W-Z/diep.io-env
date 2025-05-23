@@ -344,9 +344,9 @@ class DiepIOEnvBasic(gym.Env):
         for bullet in self.bullets[:]:
             if not bullet.alive:
                 continue
-            
+
             # query nearby object IDs from spatial hash
-            nearby_ids = self.colhash.nearby(bullet.x, bullet.y, bullet.id, bullet_query=True)
+            nearby_ids = self.colhash.nearby(bullet.x, bullet.y, bullet.id, bullet_owner_id=bullet.tank.id)
 
             for oid in nearby_ids:
                 thing = self.all_things.get(oid)
