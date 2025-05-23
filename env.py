@@ -39,6 +39,15 @@ class DiepIOEnvBasic(gym.Env):
 
         self.reset()
 
+    @staticmethod
+    def _rand_poly_side():
+        r = np.random.rand()
+        if r < cfg.POLYGON_SIDE_PROB[5]:
+            return 5
+        elif r < cfg.POLYGON_SIDE_PROB[5] + cfg.POLYGON_SIDE_PROB[4]:
+            return 4
+        return 3
+
     def reset(self, seed=None, options=None):
         self.step_count = 0
 
@@ -61,7 +70,7 @@ class DiepIOEnvBasic(gym.Env):
             Polygon(
                 x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
                 y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
-                side=np.random.randint(3, 6)
+                side=self._rand_poly_side()
             )
             for _ in range(self.n_polygons)
         ]
@@ -424,20 +433,27 @@ class DiepIOEnvBasic(gym.Env):
                 tank.update_counter()
                 dx, dy, _ = action
                 old_x, old_y = tank.x, tank.y
-
                 tank.move(dx, dy)
                 self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
                 rewards[i] += 0.01
 
         for poly in self.polygons:
+            old_x, old_y = poly.x, poly.y
             if poly.alive:
                 poly.regen_health()
                 poly.update_counter()
                 poly.update_direction()
-                old_x, old_y = poly.x, poly.y
-
                 poly.move(poly.rx, poly.ry)
+                self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
+            else:
+                # respawn
+                poly.__init__(
+                    x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                    y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                    side=self._rand_poly_side(),
+                    new_id=False,
+                )
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
 
         self._handle_collisions()

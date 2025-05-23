@@ -20,8 +20,10 @@ class Unit:
         body_damage=8.0,
         radius=1.0,
         score=0,
+        new_id=True,
     ):
-        self.id          = next(Unit.id_iter)
+        if new_id:
+            self.id          = next(Unit.id_iter)
 
         self.type        = unit_type
         self.score       = score

@@ -25,6 +25,7 @@ class Config:
     FAST_REGEN_LIST = [0.0312, 0.0326, 0.0433, 0.0660, 0.0851, 0.1095, 0.1295, 0.1560]
 
     N_POLYGON_SCALE             = 12.5 # n_polygons = floor(n_tanks * N_POLYGON_SCALE)
+    POLYGON_SIDE_PROB           = {3: 0.2, 4: 0.7, 5: 0.1}
     POLYGON_RADIUS              = {3: 1.2, 4: 1.1, 5: 1.8}
     POLYGON_HP                  = {3: 30 , 4: 10 , 5: 100}
     POLYGON_BODY_DAMAGE         = {3: 8.0, 4: 8.0, 5: 12.0}

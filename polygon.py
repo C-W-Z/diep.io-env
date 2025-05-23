@@ -3,7 +3,7 @@ from unit import Unit, UnitType
 from config import config as cfg
 
 class Polygon(Unit):
-    def __init__(self, x, y, side):
+    def __init__(self, x, y, side, new_id=True):
         self.side = side
         assert side in cfg.POLYGON_RADIUS, f"Invalid polygon side count: {side}"
 
@@ -15,6 +15,7 @@ class Polygon(Unit):
             body_damage=cfg.POLYGON_BODY_DAMAGE[side],
             radius=cfg.POLYGON_RADIUS[side],
             score=cfg.POLYGON_SCORE[side],
+            new_id=new_id,
         )
 
         self.angle = np.random.uniform(-np.pi, np.pi)
