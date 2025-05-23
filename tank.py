@@ -59,6 +59,7 @@ class Tank(Unit):
         self.skill_points = self.level2sp(self.level)
         self.stats = TankStats()
         self.calc_stats_properties()
+        self.reload_counter = 0
 
     def add_score(self, score):
         self.score += score
@@ -109,7 +110,7 @@ class Tank(Unit):
         self.body_damage = 20.0 + self.stats[TST.BodyDamage] * 4.0
 
         # Bullet Speed
-        self.bullet_v_scale = 2.0 # TODO
+        self.bullet_v_scale = 0.2 # TODO
 
         # Bullet Penetration
         self.bullet_max_hp = 2.0 + self.stats[TST.BulletPen] * 1.5
@@ -138,3 +139,13 @@ class Tank(Unit):
 
         # Knockback Resistance
         # self.stats[TST.BodyDamage], self.stats[TST.Speed]
+
+    def update_counter(self):
+        """Update invulnerability, HP-regen, and reload counters each frame."""
+        if self.invulberable_frame > 0:
+            self.invulberable_frame -= 1
+        if self.hp_regen_frame > 0:
+            self.hp_regen_frame -= 1
+        if self.reload_counter > 0:
+            self.reload_counter -= 1
+

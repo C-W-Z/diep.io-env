@@ -10,6 +10,7 @@ from unit import UnitType
 from tank import Tank
 from polygon import Polygon
 from collision import CollisionHash
+from bullet import Bullet
 
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
@@ -19,6 +20,7 @@ class DiepIOEnvBasic(gym.Env):
         self.n_polygons = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = render_mode
         self.max_steps = 1000000
+        self.bullets = []
 
         # Observation space: Vector of tank states
         self.observation_space = spaces.Box(
@@ -49,6 +51,7 @@ class DiepIOEnvBasic(gym.Env):
         return 3
 
     def reset(self, seed=None, options=None):
+        self.bullets = []  # List to store all bullets
         self.step_count = 0
 
         # Mapping of ID -> unit
@@ -252,6 +255,15 @@ class DiepIOEnvBasic(gym.Env):
                     int(unit.radius * grid_size)
                 )
 
+        for bullet in self.bullets:
+            if bullet.alive:
+                rel_x = bullet.x - center_x
+                rel_y = bullet.y - center_y
+                pixel_x = int(screen_half + rel_x * grid_size)
+                pixel_y = int(screen_half + rel_y * grid_size)
+                if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
+                    pygame.draw.circle(surface, (0, 0, 0), (pixel_x, pixel_y), int(bullet.radius * grid_size))
+
         return surface
         # Convert surface to RGB NumPy array
         # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
@@ -271,11 +283,15 @@ class DiepIOEnvBasic(gym.Env):
         if dx != 0 or dy != 0:
             magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
+        # Update tank direction based on mouse position
         mouse_x, mouse_y = pygame.mouse.get_pos()
         screen_half = cfg.SCREEN_SIZE // 2
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
         magnitude = np.hypot(rx, ry)
         self.tanks[0].rx, self.tanks[0].ry = rx / magnitude, ry / magnitude
+        # Check for left mouse button click
+        if pygame.mouse.get_pressed()[0]:  # Left button is index 0
+            shoot = 1.0
         return np.array([dx, dy, shoot], dtype=np.float32)
 
     def _get_random_input(self):
@@ -320,6 +336,38 @@ class DiepIOEnvBasic(gym.Env):
                 if thing.type == UnitType.Polygon:
                     self.__polygon_on_polygon(poly0, thing)
 
+        # handle collisions between bullets and other objects
+        self._handle_bullet_collisions()
+
+    def _handle_bullet_collisions(self):
+        """Handle collisions between bullets and tanks/polygons."""
+        for bullet in self.bullets[:]:
+            if not bullet.alive:
+                continue
+            # query nearby object IDs from spatial hash
+            nearby_ids = self.colhash.nearby(bullet.x, bullet.y, bullet.id)
+            for oid in nearby_ids:
+                thing = self.all_things.get(oid)
+                # skip missing, dead, or other bullets
+                if thing is None or not thing.alive or thing.type == UnitType.Bullet:
+                    continue
+                # compute center–center distance
+                dx = bullet.x - thing.x
+                dy = bullet.y - thing.y
+                dist = np.hypot(dx, dy)
+                # only collide when circles overlap
+                if dist > bullet.radius + thing.radius:
+                    continue
+                # apply damage: bullet → thing, then penetration damage back to bullet
+                bullet.deal_damage(thing)
+                thing.deal_damage(bullet)
+                # if bullet HP ≤ 0 after penetration, remove it
+                if not bullet.alive:
+                    self.colhash.rm(bullet.x, bullet.y, bullet.id)
+                    self.bullets.remove(bullet)
+                    del self.all_things[bullet.id]
+                # each bullet hits at most one target per frame
+                break
 
     def __tank_on_tank(self, tank0: Tank, tank1: Tank):
         if not (tank0.alive and tank1.alive):
@@ -431,12 +479,32 @@ class DiepIOEnvBasic(gym.Env):
             if tank.alive:
                 tank.regen_health()
                 tank.update_counter()
-                dx, dy, _ = action
+                dx, dy, shoot = action
                 old_x, old_y = tank.x, tank.y
                 tank.move(dx, dy)
                 self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
                 rewards[i] += 0.01
+
+            if shoot > 0.5 and tank.reload_counter <= 0:
+                bx = tank.x + tank.radius * tank.rx
+                by = tank.y + tank.radius * -tank.ry
+
+                new_bullet = Bullet(
+                    x=bx,
+                    y=by,
+                    max_hp = tank.bullet_max_hp,
+                    bullet_damage = tank.bullet_damage,
+                    radius = 0.2,
+                    tank = tank,
+                    rx = tank.rx,
+                    ry = -tank.ry,
+                    v_scale = tank.bullet_v_scale,
+                )
+                self.bullets.append(new_bullet)
+                self.all_things[new_bullet.id] = new_bullet
+                self.colhash.add(new_bullet.x, new_bullet.y, new_bullet.id)
+                tank.reload_counter = tank.reload_frames
 
         for poly in self.polygons:
             old_x, old_y = poly.x, poly.y
@@ -456,6 +524,15 @@ class DiepIOEnvBasic(gym.Env):
                 )
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
 
+        # Update bullets
+        for bullet in self.bullets[:]:  # iterate over a copy
+            alive = bullet.update(self.colhash)
+            if not alive:
+                # remove from collision registry and environment
+                self.colhash.rm(bullet.x, bullet.y, bullet.id)
+                self.bullets.remove(bullet)
+                del self.all_things[bullet.id]
+        
         self._handle_collisions()
 
         for i in range(self.n_tanks):
