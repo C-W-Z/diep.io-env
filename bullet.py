@@ -41,20 +41,14 @@ class Bullet(Unit):
             self.tank.score += self.score
             self.score = 0
 
-    def update(self, colhash):
+    def update(self):
         """
-        Move the bullet, update its position in the collision hash,
-        and check boundaries. Return False if the bullet should be removed.
+        Move the bullet and check boundaries. Return False if the bullet should be removed.
         """
-        # save old position for collision-hash update
-        old_x, old_y = self.x, self.y
 
         # linear motion along facing direction
         self.x += self.rx * self.v_scale
         self.y += self.ry * self.v_scale
-
-        # update spatial hash grid cell
-        colhash.update(old_x, old_y, self.x, self.y, self.id)
 
         # remove bullet if it goes out of map bounds
         min_coord = self.radius

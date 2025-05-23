@@ -96,6 +96,7 @@ class DiepIOEnvBasic(gym.Env):
         obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
         if self.render_mode:
             self.render()
+
         return obs, {}
 
     def _get_obs(self, agent_id):
@@ -315,7 +316,6 @@ class DiepIOEnvBasic(gym.Env):
 
     def _handle_collisions(self):
         # handle collisions for all tanks & polygons
-        # TODO: put bullet collisions in another function I guess
         for i in range(self.n_tanks):
             tank0 = self.tanks[i]
             nearby_id = self.colhash.nearby(tank0.x, tank0.y, tank0.id)
@@ -344,13 +344,16 @@ class DiepIOEnvBasic(gym.Env):
         for bullet in self.bullets[:]:
             if not bullet.alive:
                 continue
+            
             # query nearby object IDs from spatial hash
-            nearby_ids = self.colhash.nearby(bullet.x, bullet.y, bullet.id)
+            nearby_ids = self.colhash.nearby(bullet.x, bullet.y, bullet.id, bullet_query=True)
+
             for oid in nearby_ids:
                 thing = self.all_things.get(oid)
-                # skip missing, dead, or other bullets
-                if thing is None or not thing.alive or thing.type == UnitType.Bullet:
+                # skip missing or dead
+                if thing is None or not thing.alive:
                     continue
+
                 # compute center–center distance
                 dx = bullet.x - thing.x
                 dy = bullet.y - thing.y
@@ -363,7 +366,6 @@ class DiepIOEnvBasic(gym.Env):
                 thing.deal_damage(bullet)
                 # if bullet HP ≤ 0 after penetration, remove it
                 if not bullet.alive:
-                    self.colhash.rm(bullet.x, bullet.y, bullet.id)
                     self.bullets.remove(bullet)
                     del self.all_things[bullet.id]
                 # each bullet hits at most one target per frame
@@ -503,7 +505,6 @@ class DiepIOEnvBasic(gym.Env):
                 )
                 self.bullets.append(new_bullet)
                 self.all_things[new_bullet.id] = new_bullet
-                self.colhash.add(new_bullet.x, new_bullet.y, new_bullet.id)
                 tank.reload_counter = tank.reload_frames
 
         for poly in self.polygons:
@@ -526,13 +527,12 @@ class DiepIOEnvBasic(gym.Env):
 
         # Update bullets
         for bullet in self.bullets[:]:  # iterate over a copy
-            alive = bullet.update(self.colhash)
+            alive = bullet.update()
             if not alive:
-                # remove from collision registry and environment
-                self.colhash.rm(bullet.x, bullet.y, bullet.id)
+                # remove from environment
                 self.bullets.remove(bullet)
                 del self.all_things[bullet.id]
-        
+
         self._handle_collisions()
 
         for i in range(self.n_tanks):

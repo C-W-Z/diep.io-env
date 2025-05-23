@@ -15,7 +15,7 @@ class CollisionHash:
 
     # fetch nearby units
     # Returns: a list of nearby units IDs
-    def nearby(self, x, y, ID):
+    def nearby(self, x, y, ID, bullet_query=False):
         sz = self.grid.shape[0]
 
         i, j = self.coord2grid(x, y)
@@ -27,7 +27,8 @@ class CollisionHash:
                 if 0 <= ci < sz and 0 <= cj < sz:
                     nearby_id.extend(self.grid[ci, cj])
         try:
-            nearby_id.remove(ID) # don't collide with yourself
+            if not bullet_query:
+                nearby_id.remove(ID) # don't collide with yourself
         except ValueError:
             print(f"Tried to remove {ID} from {nearby_id}")
         return nearby_id
