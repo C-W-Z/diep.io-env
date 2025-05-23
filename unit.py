@@ -46,23 +46,25 @@ class Unit:
     def alive(self):
         return self.hp > 0
 
-    def recv_damage(self, collider: "Unit"):
-        body_dmg = self.body_damage * (0.25 if collider.type == UnitType.Bullet else 1.0)
+    def deal_damage(self, collider: "Unit", self_hp_before_hit = None):
+        if self_hp_before_hit == None:
+            self_hp_before_hit = self.hp
+        body_dmg = collider.body_damage * (0.25 if self.type == UnitType.Bullet else 1.0)
         damage_scale = 1.0
-        if self.type == UnitType.Bullet:
+        if collider.type == UnitType.Bullet:
             damage_scale = 0.25
-        elif self.type == UnitType.Tank and collider.type == UnitType.Tank:
+        elif collider.type == UnitType.Tank and self.type == UnitType.Tank:
             damage_scale = 1.5
-        if collider.hp >= body_dmg:
-            self.hp -= damage_scale * collider.body_damage
+        if self_hp_before_hit >= body_dmg:
+            collider.hp -= damage_scale * self.body_damage
         else:
-            self.hp -= damage_scale * collider.body_damage * collider.hp / body_dmg
-        if self.hp < 0:
-            self.hp = 0.0
-            collider.score += min(self.score, cfg.EXP_LIST[-1])
+            collider.hp -= damage_scale * self.body_damage * self_hp_before_hit / body_dmg
+        if collider.hp < 0:
+            collider.hp = 0.0
+            self.score += min(collider.score, cfg.EXP_LIST[-1])
         else:
-            self.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
-            self.invulberable_frame = cfg.INVULNERABLE_FRAMES
+            collider.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
+            collider.invulberable_frame = cfg.INVULNERABLE_FRAMES
 
     def regen_health(self):
         if not self.alive:

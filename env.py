@@ -312,7 +312,7 @@ class DiepIOEnvBasic(gym.Env):
                     self.__polygon_on_polygon(poly0, thing)
 
 
-    def __tank_on_tank(self, tank0, tank1):
+    def __tank_on_tank(self, tank0: Tank, tank1: Tank):
         if not (tank0.alive and tank1.alive):
             return
 
@@ -329,21 +329,21 @@ class DiepIOEnvBasic(gym.Env):
 
         nx, ny = dx / distance, dy / distance
         max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
-        unit_i_hp_before_hit = tank0.hp
+        tank0_hp_before_hit = tank0.hp
 
         if tank0.invulberable_frame == 0:
             tank0.collision_vx = nx * max_v
             tank0.collision_vy = ny * max_v
             tank0.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-            tank0.recv_damage(tank1)
+            tank1.deal_damage(tank0)
 
         if tank1.invulberable_frame == 0:
             tank1.collision_vx = -nx * max_v
             tank1.collision_vy = -nx * max_v
             tank1.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-            tank1.recv_damage(tank0)
+            tank0.deal_damage(tank1, tank0_hp_before_hit)
 
-    def __tank_on_polygon(self, tank, poly):
+    def __tank_on_polygon(self, tank: Tank, poly: Polygon):
         if not (tank.alive and poly.alive):
             return
 
@@ -360,23 +360,49 @@ class DiepIOEnvBasic(gym.Env):
             distance = 1.0
         nx, ny = dx / distance, dy / distance
         max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+        tank_hp_before_hit = tank.hp
 
         # Bounce and damage tank
         if tank.invulberable_frame == 0:
             tank.collision_vx    =  nx * max_v
             tank.collision_vy    =  ny * max_v
             tank.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-            tank.recv_damage(poly)
+            poly.deal_damage(tank)
 
         # Bounce and damage polygon
         if poly.invulberable_frame == 0:
             poly.collision_vx    = -nx * max_v
             poly.collision_vy    = -ny * max_v
             poly.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
-            poly.recv_damage(tank)
+            tank.deal_damage(poly, tank_hp_before_hit)
 
-    def __polygon_on_polygon(self, poly0, poly1):
-        return
+    def __polygon_on_polygon(self, poly0: Polygon, poly1: Polygon):
+        if not (poly0.alive and poly1.alive):
+            return
+
+        dx = poly0.x - poly1.x
+        dy = poly0.y - poly1.y
+        distance = np.hypot(dx, dy)
+        radius_sum = poly0.radius + poly1.radius
+        if distance > radius_sum:
+            return
+
+        if distance == 0:
+            dx, dy = 1.0, 0.0
+            distance = 1.0
+
+        nx, ny = dx / distance, dy / distance
+        max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+
+        if poly0.invulberable_frame == 0:
+            poly0.collision_vx = nx * max_v
+            poly0.collision_vy = ny * max_v
+            poly0.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+
+        if poly1.invulberable_frame == 0:
+            poly1.collision_vx = -nx * max_v
+            poly1.collision_vy = -nx * max_v
+            poly1.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
 
     def step(self, actions=None):
         self.step_count += 1
