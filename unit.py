@@ -11,6 +11,10 @@ class UnitType(Enum):
 class Unit:
     id_iter = itertools.count()
 
+    @classmethod
+    def reset_id_iter(self):
+        Unit.id_iter = itertools.count()
+
     def __init__(
         self,
         unit_type,
@@ -36,9 +40,10 @@ class Unit:
         self.vx, self.vy = 0.0, 0.0
         self.ax, self.ay = 0.0, 0.0
         self.collision_vx, self.collision_vy = 0.0, 0.0
-        self.collision_frame    = 0
-        self.invulberable_frame = 0
-        self.hp_regen_frame     = 0
+        self.max_collision_frame = 0
+        self.collision_frame     = 0
+        self.invulberable_frame  = 0
+        self.hp_regen_frame      = 0
         # Stats Properties
         self.slow_health_regen = 0.03 / 30 / cfg.FPS # per frame, == 3% per 30 second
         self.fast_health_regen = 0.0312 / cfg.FPS # per frame, == 3.12% per second
@@ -118,7 +123,7 @@ class Unit:
         # Handle collision motion
         collision_vx, collision_vy = 0.0, 0.0
         if self.collision_frame > 0:
-            factor = self.collision_frame / cfg.COLLISION_BOUNCE_DEC_FRAMES
+            factor = self.collision_frame / self.max_collision_frame
             collision_vx = self.collision_vx * factor
             collision_vy = self.collision_vy * factor
             self.collision_frame -= 1

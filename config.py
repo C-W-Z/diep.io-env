@@ -11,14 +11,14 @@ class Config:
     BASE_MAX_VELOCITY               = 10 / FPS  # 10 grids per second
     BASE_ACC_FRAMES                 = 10        # Acceleration
     BASE_DEC_FRAMES                 = 60        # Deceleration
-    COLLISION_BOUNCE_V_SCALE        = 1.2
-    BULLET_BOUNCE_V_SCALE           = 1.0
-    BULLET_COLLIDER_BOUNCE_V_SCALE  = 0.5
-    TANK_BOUNCE_V_SCALE             = 1.0
-    COLLISION_BOUNCE_DEC_FRAMES     = 20
-    BULLET_BOUNCE_DEC_FRAMES        = 10
+    POLYGON_BOUNCE_V_SCALE          = 1.2
+    POLYGON_BOUNCE_DEC_FRAMES       = 20
+    TANK_BOUNCE_V_SCALE             = 0.75
     TANK_BOUNCE_DEC_FRAMES          = 40
-    INVULNERABLE_FRAMES             = 6
+    BULLET_COLLIDER_BOUNCE_V_SCALE  = 0.5
+    BULLET_BOUNCE_V_SCALE           = 20.0
+    BULLET_BOUNCE_DEC_FRAMES        = 10
+    INVULNERABLE_FRAMES             = 5
     SLOW_HP_REGEN_FRAMES            = 30 * FPS  # 30 seconds in 60 fps
 
     EXP_LIST = [
@@ -32,6 +32,7 @@ class Config:
     N_POLYGON_SCALE                 = 12.5 # n_polygons = floor(n_tanks * N_POLYGON_SCALE)
     POLYGON_SIDE_PROB               = {3: 0.2, 4: 0.7, 5: 0.1}
     POLYGON_RADIUS                  = {3: 1.2, 4: 1.1, 5: 1.8}
+    POLYGON_COLLISION_RADIUS        = {3: 0.9, 4: 0.9, 5: 1.6}
     POLYGON_HP                      = {3: 30 , 4: 10 , 5: 100}
     POLYGON_BODY_DAMAGE             = {3: 8.0, 4: 8.0, 5: 12.0}
     POLYGON_SCORE                   = {3: 25 , 4: 10 , 5: 130}

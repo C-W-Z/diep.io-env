@@ -6,7 +6,7 @@ import sys
 from typing import Dict, Union
 
 from config import config as cfg
-from unit import UnitType
+from unit import UnitType, Unit
 from tank import Tank
 from polygon import Polygon
 from collision import CollisionHash
@@ -20,7 +20,7 @@ class DiepIOEnvBasic(gym.Env):
         self.n_polygons = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = render_mode
         self.max_steps = 1000000
-        self.bullets = []
+        self.bullets: list[Bullet] = []
 
         # Observation space: Vector of tank states
         self.observation_space = spaces.Box(
@@ -51,7 +51,9 @@ class DiepIOEnvBasic(gym.Env):
         return 3
 
     def reset(self, seed=None, options=None):
-        self.bullets = []  # List to store all bullets
+        Unit.reset_id_iter()
+
+        self.bullets: list[Bullet] = []  # List to store all bullets
         self.step_count = 0
 
         # Mapping of ID -> unit
@@ -213,16 +215,25 @@ class DiepIOEnvBasic(gym.Env):
                 max_y < 0 or min_y >= cfg.SCREEN_SIZE):
                 continue  # Polygon is completely outside the screen
 
+            # Collision Box
+            # pygame.draw.circle(surface, (127, 127, 127), (pixel_x, pixel_y), int(unit.radius * grid_size))
+
+            if unit.invulberable_frame == cfg.INVULNERABLE_FRAMES:
+                color = (216, 216, 216)
+
+            # Draw polygon
+            pygame.draw.polygon(surface, color, vertices)
+
             # Draw HP bar if the polygon's center is on-screen or near the edge
-            if -grid_size <= pixel_x <= cfg.SCREEN_SIZE + grid_size and -grid_size <= pixel_y <= cfg.SCREEN_SIZE + grid_size:
+            # if not (-grid_size <= pixel_x <= cfg.SCREEN_SIZE + grid_size and -grid_size <= pixel_y <= cfg.SCREEN_SIZE + grid_size):
+            #     continue
+
+            if unit.hp < unit.max_hp:
                 hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)
                 pygame.draw.rect(
                     surface, (0, 216, 0),
                     (pixel_x - grid_size * unit.radius, pixel_y + grid_size * unit.radius, hp_width, 5)
                 )
-
-            # Draw polygon
-            pygame.draw.polygon(surface, color, vertices)
 
         # Draw all tanks
         for i, unit in enumerate(self.tanks):
@@ -253,18 +264,21 @@ class DiepIOEnvBasic(gym.Env):
                 int(grid_size)
             )
             # Draw body
-            color = (0, 127, 255) if i == 0 else (255, 0, 0)
+            color = (0, 127, 255) if unit.id == 0 else (255, 0, 0)
+            if unit.invulberable_frame == cfg.INVULNERABLE_FRAMES:
+                color = (216, 216, 216)
             pygame.draw.circle(
                 surface, color,
                 (pixel_x, pixel_y),
                 int(unit.radius * grid_size)
             )
             # Draw HP bar
-            hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)  # Scale with grid
-            pygame.draw.rect(
-                surface, (0, 216, 0),
-                (pixel_x - grid_size * unit.radius, pixel_y + grid_size * unit.radius, hp_width, 5)
-            )
+            if unit.hp < unit.max_hp:
+                hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)
+                pygame.draw.rect(
+                    surface, (0, 216, 0),
+                    (pixel_x - grid_size * unit.radius, pixel_y + grid_size * unit.radius, hp_width, 5)
+                )
 
         for bullet in self.bullets:
             if bullet.alive:
@@ -273,14 +287,18 @@ class DiepIOEnvBasic(gym.Env):
                 pixel_x = int(screen_half + rel_x * grid_size)
                 pixel_y = int(screen_half + rel_y * grid_size)
                 if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
-                    pygame.draw.circle(surface, (0, 0, 0), (pixel_x, pixel_y), int(bullet.radius * grid_size))
+                    color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
+                    if bullet.invulberable_frame == cfg.INVULNERABLE_FRAMES:
+                        color = (216, 216, 216)
+                    pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
                     # Draw HP bar
-                    hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
-                    pygame.draw.rect(
-                        surface, (0, 216, 0),
-                        (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
-                    )
+                    if bullet.hp < bullet.max_hp:
+                        hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
+                        pygame.draw.rect(
+                            surface, (0, 216, 0),
+                            (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
+                        )
 
         return surface
         # Convert surface to RGB NumPy array
@@ -388,18 +406,22 @@ class DiepIOEnvBasic(gym.Env):
 
                 # apply damage: bullet → thing, then penetration damage back to bullet
 
-                thing.collision_vx = nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_COLLIDER_BOUNCE_V_SCALE
-                thing.collision_vy = ny * cfg.BASE_MAX_VELOCITY * cfg.BULLET_COLLIDER_BOUNCE_V_SCALE
-                thing.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
-
-                bullet.collision_vx = -nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
-                bullet.collision_vy = -nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
-                bullet.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
-
                 if thing.invulberable_frame == 0:
+                    thing.collision_vx = nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_COLLIDER_BOUNCE_V_SCALE
+                    thing.collision_vy = ny * cfg.BASE_MAX_VELOCITY * cfg.BULLET_COLLIDER_BOUNCE_V_SCALE
+                    thing.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+                    thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
+                max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE / distance * (thing.radius + bullet.radius)
+                print(max_v)
+                bullet.collision_vx = -nx * max_v
+                bullet.collision_vy = -nx * max_v
+                bullet.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+                bullet.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+
                 if bullet.invulberable_frame == 0:
+
                     thing.deal_damage(bullet, thing_hp_before_hit)
 
                 # if bullet HP ≤ 0 after penetration, remove it
@@ -431,12 +453,14 @@ class DiepIOEnvBasic(gym.Env):
             tank0.collision_vx = nx * max_v
             tank0.collision_vy = ny * max_v
             tank0.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
+            tank0.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank1.deal_damage(tank0)
 
         if tank1.invulberable_frame == 0:
             tank1.collision_vx = -nx * max_v
             tank1.collision_vy = -nx * max_v
             tank1.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
+            tank1.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank0.deal_damage(tank1, tank0_hp_before_hit)
 
     def __tank_on_polygon(self, tank: Tank, poly: Polygon):
@@ -461,13 +485,15 @@ class DiepIOEnvBasic(gym.Env):
             tank.collision_vx    =  nx * cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
             tank.collision_vy    =  ny * cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
             tank.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
+            tank.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             poly.deal_damage(tank)
 
         # Bounce and damage polygon
         if poly.invulberable_frame == 0:
-            poly.collision_vx    = -nx * cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
-            poly.collision_vy    = -ny * cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
-            poly.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            poly.collision_vx    = -nx * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_BOUNCE_V_SCALE
+            poly.collision_vy    = -ny * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_BOUNCE_V_SCALE
+            poly.collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
+            poly.max_collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
 
     def __polygon_on_polygon(self, poly0: Polygon, poly1: Polygon):
@@ -485,17 +511,19 @@ class DiepIOEnvBasic(gym.Env):
             distance = 1.0
 
         nx, ny = dx / distance, dy / distance
-        max_v = cfg.BASE_MAX_VELOCITY * cfg.COLLISION_BOUNCE_V_SCALE
+        max_v = cfg.BASE_MAX_VELOCITY * cfg.POLYGON_BOUNCE_V_SCALE
 
         if poly0.invulberable_frame == 0:
             poly0.collision_vx = nx * max_v
             poly0.collision_vy = ny * max_v
-            poly0.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            poly0.collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
+            poly0.max_collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
 
         if poly1.invulberable_frame == 0:
             poly1.collision_vx = -nx * max_v
             poly1.collision_vy = -nx * max_v
-            poly1.collision_frame = cfg.COLLISION_BOUNCE_DEC_FRAMES
+            poly1.collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
+            poly1.max_collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
 
     def step(self, actions=None):
         self.step_count += 1
