@@ -413,15 +413,11 @@ class DiepIOEnvBasic(gym.Env):
                     thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
-                max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE / distance * (thing.radius + bullet.radius)
-                print(max_v)
-                bullet.collision_vx = -nx * max_v
-                bullet.collision_vy = -nx * max_v
-                bullet.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
-                bullet.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
-
                 if bullet.invulberable_frame == 0:
-
+                    bullet.collision_vx = -nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
+                    bullet.collision_vy = -nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
+                    bullet.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+                    bullet.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     thing.deal_damage(bullet, thing_hp_before_hit)
 
                 # if bullet HP ≤ 0 after penetration, remove it
@@ -546,6 +542,7 @@ class DiepIOEnvBasic(gym.Env):
                 dx, dy, shoot = action
                 old_x, old_y = tank.x, tank.y
                 tank.move(dx, dy)
+                tank.clip_in_map()
                 self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
                 rewards[i] += 0.01
@@ -576,6 +573,7 @@ class DiepIOEnvBasic(gym.Env):
                 poly.update_counter()
                 poly.update_direction()
                 poly.move(poly.rx, poly.ry)
+                poly.clip_in_map()
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
             else:
                 # respawn
@@ -590,7 +588,8 @@ class DiepIOEnvBasic(gym.Env):
         # Update bullets
         for bullet in self.bullets[:]:  # iterate over a copy
             bullet.update_counter()
-            alive = bullet.update()
+            bullet.move(bullet.rx, bullet.ry)
+            alive = bullet.check_out_map()
             if not alive:
                 # remove from environment
                 self.bullets.remove(bullet)

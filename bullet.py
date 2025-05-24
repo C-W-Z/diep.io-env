@@ -42,14 +42,17 @@ class Bullet(Unit):
             self.score = 0
 
     def update(self):
-        """
-        Move the bullet and check boundaries. Return False if the bullet should be removed.
-        """
+
 
         # linear motion along facing direction
         self.x += self.rx * self.v_scale
         self.y += self.ry * self.v_scale
 
+
+    def check_out_map(self):
+        """
+        Move the bullet and check boundaries. Return False if the bullet should be removed.
+        """
         # remove bullet if it goes out of map bounds
         min_coord = -self.radius
         max_coord = cfg.MAP_SIZE + self.radius

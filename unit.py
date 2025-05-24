@@ -137,5 +137,7 @@ class Unit:
 
         self.x += final_vx
         self.y += final_vy
+
+    def clip_in_map(self):
         self.x = np.clip(self.x, self.radius, cfg.MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, cfg.MAP_SIZE - self.radius)
