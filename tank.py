@@ -61,6 +61,18 @@ class Tank(Unit):
         self.calc_stats_properties()
         self.reload_counter = 0
 
+        self.same_collider_counter_reset_frame = 0
+        self.last_collider_id = -1
+        self.same_collider_counter = 0
+
+    def update_counter(self):
+        super(Tank, self).update_counter()
+        if self.reload_counter > 0:
+            self.reload_counter -= 1
+        self.same_collider_counter_reset_frame -= 1
+        if self.same_collider_counter_reset_frame <= 0:
+            self.same_collider_counter = 0
+
     def add_score(self, score):
         self.score += score
         old_level = self.level
@@ -140,12 +152,3 @@ class Tank(Unit):
 
         # Knockback Resistance
         # self.stats[TST.BodyDamage], self.stats[TST.Speed]
-
-    def update_counter(self):
-        """Update invulnerability, HP-regen, and reload counters each frame."""
-        if self.invulberable_frame > 0:
-            self.invulberable_frame -= 1
-        if self.hp_regen_frame > 0:
-            self.hp_regen_frame -= 1
-        if self.reload_counter > 0:
-            self.reload_counter -= 1

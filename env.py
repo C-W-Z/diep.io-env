@@ -218,7 +218,7 @@ class DiepIOEnvBasic(gym.Env):
             # Collision Box
             # pygame.draw.circle(surface, (127, 127, 127), (pixel_x, pixel_y), int(unit.radius * grid_size))
 
-            if unit.invulberable_frame == cfg.INVULNERABLE_FRAMES:
+            if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                 color = (216, 216, 216)
 
             # Draw polygon
@@ -265,7 +265,7 @@ class DiepIOEnvBasic(gym.Env):
             )
             # Draw body
             color = (0, 127, 255) if unit.id == 0 else (255, 0, 0)
-            if unit.invulberable_frame == cfg.INVULNERABLE_FRAMES:
+            if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                 color = (216, 216, 216)
             pygame.draw.circle(
                 surface, color,
@@ -288,7 +288,7 @@ class DiepIOEnvBasic(gym.Env):
                 pixel_y = int(screen_half + rel_y * grid_size)
                 if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
                     color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
-                    if bullet.invulberable_frame == cfg.INVULNERABLE_FRAMES:
+                    if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                         color = (216, 216, 216)
                     pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
@@ -414,7 +414,7 @@ class DiepIOEnvBasic(gym.Env):
                     bullet.deal_damage(thing)
 
                 max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
-                print(max_v)
+                # print(max_v)
 
                 bullet.collision_vx = -nx * max_v
                 bullet.collision_vy = -nx * max_v
@@ -450,19 +450,31 @@ class DiepIOEnvBasic(gym.Env):
         max_v = cfg.BASE_MAX_VELOCITY * cfg.TANK_TANK_BOUNCE_V_SCALE
         tank0_hp_before_hit = tank0.hp
 
-        if tank0.invulberable_frame == 0:
+        if tank0.invulberable_frame == 0 and tank1.invulberable_frame == 0:
             tank0.collision_vx = nx * max_v
             tank0.collision_vy = ny * max_v
             tank0.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank0.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank1.deal_damage(tank0)
 
-        if tank1.invulberable_frame == 0:
             tank1.collision_vx = -nx * max_v
             tank1.collision_vy = -nx * max_v
             tank1.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank1.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank0.deal_damage(tank1, tank0_hp_before_hit)
+
+            if tank0.last_collider_id == tank1.id:
+                tank0.same_collider_counter += 1
+            else:
+                tank0.same_collider_counter = 1
+            tank0.last_collider_id = tank1.id
+            tank0.same_collider_counter_reset_frame = cfg.TANK_LONG_INVULNERABLE_FRAMES
+            if tank1.last_collider_id == tank0.id:
+                tank1.same_collider_counter += 1
+            else:
+                tank1.same_collider_counter = 1
+            tank1.last_collider_id = tank0.id
+            tank1.same_collider_counter_reset_frame = cfg.TANK_LONG_INVULNERABLE_FRAMES
 
     def __tank_on_polygon(self, tank: Tank, poly: Polygon):
         if not (tank.alive and poly.alive):
@@ -481,21 +493,28 @@ class DiepIOEnvBasic(gym.Env):
         nx, ny = dx / distance, dy / distance
         tank_hp_before_hit = tank.hp
 
-        # Bounce and damage tank
-        if tank.invulberable_frame == 0:
+
+        if tank.invulberable_frame == 0 and poly.invulberable_frame == 0:
+            # Bounce and damage tank
             tank.collision_vx    =  nx * cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
             tank.collision_vy    =  ny * cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
             tank.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.deal_damage(tank)
 
-        # Bounce and damage polygon
-        if poly.invulberable_frame == 0:
+            # Bounce and damage polygon
             poly.collision_vx    = -nx * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_TANK_BOUNCE_V_SCALE
             poly.collision_vy    = -ny * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_TANK_BOUNCE_V_SCALE
             poly.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
+
+            if tank.last_collider_id == poly.id:
+                tank.same_collider_counter += 1
+            else:
+                tank.same_collider_counter = 1
+            tank.last_collider_id = poly.id
+            tank.same_collider_counter_reset_frame = cfg.TANK_LONG_INVULNERABLE_FRAMES
 
     def __polygon_on_polygon(self, poly0: Polygon, poly1: Polygon):
         if not (poly0.alive and poly1.alive):

@@ -73,6 +73,10 @@ class Unit:
             collider.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
             collider.invulberable_frame = cfg.INVULNERABLE_FRAMES
 
+            if collider.type == UnitType.Tank and collider.same_collider_counter == 2 and collider.last_collider_id == self.id:
+                collider.invulberable_frame = cfg.TANK_LONG_INVULNERABLE_FRAMES
+                print("same", collider.same_collider_counter)
+
     def regen_health(self):
         if not self.alive:
             return

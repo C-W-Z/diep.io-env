@@ -22,6 +22,7 @@ class Config:
     BULLET_BOUNCE_V_SCALE           = 0.25
     BULLET_BOUNCE_DEC_FRAMES        = 5
     INVULNERABLE_FRAMES             = 5
+    TANK_LONG_INVULNERABLE_FRAMES   = 15
     SLOW_HP_REGEN_FRAMES            = 30 * FPS  # 30 seconds in 60 fps
 
     EXP_LIST = [
@@ -45,5 +46,6 @@ class Config:
     BASE_BULLET_V_SCALE             = 2.0
     MIN_BULLET_V_MULTIPLIER         = 0.5
     BULLET_COLLISION_V_MULTIPLIER   = 0.6
+    BULLET_ALIVE_FRAMES             = 3 * FPS
 
 config = Config()

@@ -46,6 +46,8 @@ class Bullet(Unit):
         if self.invulberable_frame > 0:
             self.invulberable_frame -= 1
         self.move_frame += 1
+        if self.move_frame >= cfg.BULLET_ALIVE_FRAMES:
+            self.hp = 0.0
 
     def move(self):
         if not self.alive:
