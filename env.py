@@ -413,11 +413,16 @@ class DiepIOEnvBasic(gym.Env):
                     thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
+                max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
+                print(max_v)
+
+                bullet.collision_vx = -nx * max_v
+                bullet.collision_vy = -nx * max_v
+                bullet.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+                bullet.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+
                 if bullet.invulberable_frame == 0:
-                    bullet.collision_vx = -nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
-                    bullet.collision_vy = -nx * cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
-                    bullet.collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
-                    bullet.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
+
                     thing.deal_damage(bullet, thing_hp_before_hit)
 
                 # if bullet HP ≤ 0 after penetration, remove it
@@ -442,7 +447,7 @@ class DiepIOEnvBasic(gym.Env):
             distance = 1.0
 
         nx, ny = dx / distance, dy / distance
-        max_v = cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
+        max_v = cfg.BASE_MAX_VELOCITY * cfg.TANK_TANK_BOUNCE_V_SCALE
         tank0_hp_before_hit = tank0.hp
 
         if tank0.invulberable_frame == 0:
@@ -480,16 +485,16 @@ class DiepIOEnvBasic(gym.Env):
         if tank.invulberable_frame == 0:
             tank.collision_vx    =  nx * cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
             tank.collision_vy    =  ny * cfg.BASE_MAX_VELOCITY * cfg.TANK_BOUNCE_V_SCALE
-            tank.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
-            tank.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
+            tank.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
+            tank.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.deal_damage(tank)
 
         # Bounce and damage polygon
         if poly.invulberable_frame == 0:
-            poly.collision_vx    = -nx * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_BOUNCE_V_SCALE
-            poly.collision_vy    = -ny * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_BOUNCE_V_SCALE
-            poly.collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
-            poly.max_collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
+            poly.collision_vx    = -nx * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_TANK_BOUNCE_V_SCALE
+            poly.collision_vy    = -ny * cfg.BASE_MAX_VELOCITY * cfg.POLYGON_TANK_BOUNCE_V_SCALE
+            poly.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
+            poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
 
     def __polygon_on_polygon(self, poly0: Polygon, poly1: Polygon):
@@ -542,7 +547,6 @@ class DiepIOEnvBasic(gym.Env):
                 dx, dy, shoot = action
                 old_x, old_y = tank.x, tank.y
                 tank.move(dx, dy)
-                tank.clip_in_map()
                 self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
                 rewards[i] += 0.01
@@ -573,7 +577,6 @@ class DiepIOEnvBasic(gym.Env):
                 poly.update_counter()
                 poly.update_direction()
                 poly.move(poly.rx, poly.ry)
-                poly.clip_in_map()
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
             else:
                 # respawn
@@ -588,9 +591,8 @@ class DiepIOEnvBasic(gym.Env):
         # Update bullets
         for bullet in self.bullets[:]:  # iterate over a copy
             bullet.update_counter()
-            bullet.move(bullet.rx, bullet.ry)
-            alive = bullet.check_out_map()
-            if not alive:
+            bullet.move()
+            if not bullet.alive:
                 # remove from environment
                 self.bullets.remove(bullet)
                 del self.all_things[bullet.id]

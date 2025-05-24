@@ -4,9 +4,9 @@ from config import config as cfg
 import itertools
 
 class UnitType(Enum):
-    Tank = 0
+    Tank    = 0
     Polygon = 1
-    Bullet = 2
+    Bullet  = 2
 
 class Unit:
     id_iter = itertools.count()
@@ -138,6 +138,5 @@ class Unit:
         self.x += final_vx
         self.y += final_vy
 
-    def clip_in_map(self):
         self.x = np.clip(self.x, self.radius, cfg.MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, cfg.MAP_SIZE - self.radius)

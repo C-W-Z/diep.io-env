@@ -13,10 +13,13 @@ class Config:
     BASE_DEC_FRAMES                 = 60        # Deceleration
     POLYGON_BOUNCE_V_SCALE          = 1.2
     POLYGON_BOUNCE_DEC_FRAMES       = 20
-    TANK_BOUNCE_V_SCALE             = 0.75
+    POLYGON_TANK_BOUNCE_V_SCALE     = 0.55
+    POLYGON_TANK_BOUNCE_DEC_FRAMES  = 60
+    TANK_BOUNCE_V_SCALE             = 0.25
+    TANK_TANK_BOUNCE_V_SCALE        = 0.75
     TANK_BOUNCE_DEC_FRAMES          = 40
-    BULLET_COLLIDER_BOUNCE_V_SCALE  = 0.3
-    BULLET_BOUNCE_V_SCALE           = 0.2
+    BULLET_COLLIDER_BOUNCE_V_SCALE  = 0.25
+    BULLET_BOUNCE_V_SCALE           = 0.25
     BULLET_BOUNCE_DEC_FRAMES        = 5
     INVULNERABLE_FRAMES             = 5
     SLOW_HP_REGEN_FRAMES            = 30 * FPS  # 30 seconds in 60 fps
@@ -39,6 +42,8 @@ class Config:
     POLYGON_V_SCALE                 = 0.1
     POLYGON_ROTATE_SPEED            = 0.005
 
-    BASE_BULLET_V_SCALE             = 1.0
+    BASE_BULLET_V_SCALE             = 2.0
+    MIN_BULLET_V_MULTIPLIER         = 0.5
+    BULLET_COLLISION_V_MULTIPLIER   = 0.6
 
 config = Config()
