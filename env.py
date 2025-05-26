@@ -562,15 +562,17 @@ class DiepIOEnvBasic(gym.Env):
 
         for i, action in actions.items():
             tank: Tank = self.tanks[i]
-            if tank.alive:
-                tank.regen_health()
-                tank.update_counter()
-                dx, dy, shoot = action
-                old_x, old_y = tank.x, tank.y
-                tank.move(dx, dy)
-                self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
+            if not tank.alive:
+                continue
 
-                rewards[i] += 0.01
+            tank.regen_health()
+            tank.update_counter()
+            dx, dy, shoot = action
+            old_x, old_y = tank.x, tank.y
+            tank.move(dx, dy)
+            self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
+
+            rewards[i] += 0.01
 
             if shoot > 0.5 and tank.reload_counter <= 0:
                 bx = tank.x + tank.radius * tank.rx
@@ -590,6 +592,9 @@ class DiepIOEnvBasic(gym.Env):
                 self.bullets.append(new_bullet)
                 self.all_things[new_bullet.id] = new_bullet
                 tank.reload_counter = tank.reload_frames
+
+                tank.recoil_vx += -1 * tank.rx
+                tank.recoil_vy -= -1 * tank.ry
 
         for poly in self.polygons:
             old_x, old_y = poly.x, poly.y

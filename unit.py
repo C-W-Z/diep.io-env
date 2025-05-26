@@ -40,6 +40,7 @@ class Unit:
         self.vx, self.vy = 0.0, 0.0
         self.ax, self.ay = 0.0, 0.0
         self.collision_vx, self.collision_vy = 0.0, 0.0
+        self.recoil_vx, self.recoil_vy = 0.0, 0.0
         self.max_collision_frame = 0
         self.collision_frame     = 0
         self.invulberable_frame  = 0
@@ -136,8 +137,19 @@ class Unit:
             self.collision_vx = 0.0
             self.collision_vy = 0.0
 
-        final_vx = self.vx + collision_vx
-        final_vy = self.vy + collision_vy
+        # Recoil
+        if self.type == UnitType.Tank:
+            recoil_vx = self.recoil_vx * cfg.TANK_RECOIL_V_SCALE
+            recoil_vy = self.recoil_vy * cfg.TANK_RECOIL_V_SCALE
+
+            # decay speed
+            self.recoil_vx *= cfg.TANK_RECOIL_DECAY
+            self.recoil_vy *= cfg.TANK_RECOIL_DECAY
+        else:
+            recoil_vx = recoil_vy = 0.0
+
+        final_vx = self.vx + collision_vx + recoil_vx
+        final_vy = self.vy + collision_vy + recoil_vy
 
         self.x += final_vx
         self.y += final_vy

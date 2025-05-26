@@ -18,6 +18,8 @@ class Config:
     TANK_BOUNCE_V_SCALE             = 0.25
     TANK_TANK_BOUNCE_V_SCALE        = 0.75
     TANK_BOUNCE_DEC_FRAMES          = 40
+    TANK_RECOIL_V_SCALE             = 0.10      # Recoil
+    TANK_RECOIL_DECAY               = 0.95
     BULLET_COLLIDER_BOUNCE_V_SCALE  = 0.25
     BULLET_BOUNCE_V_SCALE           = 0.25
     BULLET_BOUNCE_DEC_FRAMES        = 5
