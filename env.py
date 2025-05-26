@@ -8,6 +8,7 @@ from typing import Dict, Union
 from config import config as cfg
 from unit import UnitType, Unit
 from tank import Tank
+from tank import TST
 from polygon import Polygon
 from collision import CollisionHash
 from bullet import Bullet
@@ -112,6 +113,93 @@ class DiepIOEnvBasic(gym.Env):
             else:
                 obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         return np.array(obs, dtype=np.float32)
+    
+    def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
+        # 1. prepare fonts and dynamic header sizes
+        font = pygame.font.Font(None, 24)
+        line_spacing    = font.get_linesize()   # height of one text line
+        header_padding  = 5                     # top & bottom padding inside header
+        header_height   = header_padding + line_spacing * 2 + header_padding
+
+        # 2. prepare skill list & panel dimensions
+        skills          = [
+            ("Health Regen", (0, 255, 0)),
+            ("Max Health", (128, 0, 128)),
+            ("Body Damage", (255, 0, 255)),
+            ("Bullet Speed", (255, 255, 0)),
+            ("Bullet Penetration", (0, 0, 255)),
+            ("Bullet Damage", (255, 165, 0)),
+            ("Reload", (0, 255, 255)),
+            ("Movement Speed", (255, 0, 0)),
+        ]
+        line_height     = 25    # vertical spacing per skill entry
+        progress_bar_h  = 20
+        bottom_padding  = 10
+        panel_width     = 250
+
+        # compute full panel height
+        panel_height = header_height + len(skills) * line_height + progress_bar_h + bottom_padding
+
+        # if panel would go off-screen, shift it up
+        screen_h = cfg.SCREEN_SIZE
+        if offset_y + panel_height > screen_h:
+            offset_y = max(0, screen_h - panel_height)
+
+        # 3. draw panel background
+        pygame.draw.rect(
+            screen, (100, 100, 100),
+            (offset_x, offset_y, panel_width, panel_height)
+        )
+
+        # 4. draw progress bar background
+        bar_x = offset_x + 10
+        bar_y = offset_y + panel_height - progress_bar_h - bottom_padding
+        bar_w = panel_width - 20
+        pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_w, progress_bar_h))
+
+        # compute progress based on current level range
+        exp_list = cfg.EXP_LIST
+        curr_level = tank.level
+        curr_exp = tank.score
+        curr_threshold = exp_list[curr_level]
+        if curr_level + 1 < len(exp_list):
+            next_threshold = exp_list[curr_level + 1]
+            exp_range = next_threshold - curr_threshold
+            # avoid division by zero
+            progress = (curr_exp - curr_threshold) / exp_range if exp_range > 0 else 1.0
+        else:
+            progress = 1.0
+        # clamp between 0 and 1
+        progress = max(0.0, min(progress, 1.0))
+
+        # draw filled portion
+        pygame.draw.rect(screen, (0, 255, 0), (bar_x, bar_y, int(bar_w * progress), progress_bar_h))
+
+        # 5. render header text at top
+        # Skill Points
+        sp_surf = font.render(f"Skill Points: {tank.skill_points}", True, (255,255,255))
+        screen.blit(sp_surf, (offset_x + 10, offset_y + header_padding))
+        # Score & Level
+        lvl_y   = offset_y + header_padding + line_spacing
+        lvl_surf = font.render(f"Score: {tank.score}  Level: {tank.level} Tank", True, (255,255,255))
+        screen.blit(lvl_surf, (offset_x + 10, lvl_y))
+
+        # 6. render each skill entry
+        self.skill_buttons.clear()
+        for i, (skill_name, _) in enumerate(skills):
+            y = offset_y + header_height + i * line_height
+            level = tank.stats[TST(i)]
+            text_surf = font.render(f"{skill_name}: {level}", True, (255,255,255))
+            screen.blit(text_surf, (offset_x + 10, y))
+
+            # draw plus button
+            btn = pygame.Rect(offset_x + 200, y - 5, 30, 20)
+            btn_color = (0,200,0) if tank.skill_points > 0 else (150,150,150)
+            pygame.draw.rect(screen, btn_color, btn)
+            plus_surf = font.render("+", True, (0,0,0))
+            screen.blit(plus_surf, (btn.x + 8, btn.y + 2))
+
+            self.skill_buttons.append((btn, i))
 
     def _render_frame(self, agent_id):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
@@ -301,6 +389,12 @@ class DiepIOEnvBasic(gym.Env):
                             surface, (0, 216, 0),
                             (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
                         )
+        
+        # Render skill panel for agent 0
+        self.skill_buttons = []  # Clear previous buttons
+        tank = self.tanks[agent_id]
+        if tank.alive:
+            self._render_skill_panel(tank, surface, 10, cfg.SCREEN_SIZE - 260)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
@@ -547,11 +641,38 @@ class DiepIOEnvBasic(gym.Env):
             poly1.collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
             poly1.max_collision_frame = cfg.POLYGON_BOUNCE_DEC_FRAMES
 
+    def _handle_mouse_click(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left mouse button
+            mouse_pos = pygame.mouse.get_pos()
+            for button_rect, skill_index in self.skill_buttons:
+                if button_rect.collidepoint(mouse_pos):
+                    tank = self.tanks[0]  # Only handle first tank for simplicity
+                    if tank.add_points(skill_index):  # Attempt to add point
+                        tank.calc_stats_properties()  # Update tank properties
+                    break
+
     def step(self, actions=None):
         self.step_count += 1
         rewards = {i: 0.0 for i in range(self.n_tanks)}
         dones = {i: False for i in range(self.n_tanks)}
         infos = {}
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            self._handle_mouse_click(event)
+            
+            # Handle number key presses for adding skill points
+            if event.type == pygame.KEYDOWN:
+                # map pygame.K_1..pygame.K_8 to skill indices 0..7
+                if pygame.K_1 <= event.key <= pygame.K_8:
+                    skill_index = event.key - pygame.K_1  # 0-based
+                    tank = self.tanks[0]  # only handle first tank
+                    # try to add a point; if successful, update properties
+                    if tank.add_points(skill_index):
+                        tank.calc_stats_properties()
 
         if actions is None:
             actions = {}
@@ -575,8 +696,8 @@ class DiepIOEnvBasic(gym.Env):
             rewards[i] += 0.01
 
             if shoot > 0.5 and tank.reload_counter <= 0:
-                bx = tank.x + tank.radius * tank.rx
-                by = tank.y + tank.radius * -tank.ry
+                bx = tank.x + tank.radius * tank.rx * 2
+                by = tank.y + tank.radius * -tank.ry * 2
 
                 new_bullet = Bullet(
                     x=bx,
