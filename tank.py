@@ -156,16 +156,3 @@ class Tank(Unit):
 
         # Knockback Resistance  # TODO
         # self.stats[TST.BodyDamage], self.stats[TST.Speed]
-
-    def deal_damage(self, collider: "Unit", self_hp_before_hit=None):
-        """Override to award XP and skill points when this Tank kills something."""
-        old_score = self.score
-        # call base damage logic (may increase self.score on kill)
-        super(Tank, self).deal_damage(collider, self_hp_before_hit)
-        # compute raw XP gained
-        xp_earned = self.score - old_score
-        if xp_earned > 0:
-            # Revert the direct score increment
-            self.score = old_score
-            # Properly add score so level up and skill_points are handled
-            self.add_score(xp_earned)

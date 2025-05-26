@@ -36,18 +36,8 @@ class Bullet(Unit):
         self.slow_health_regen = 0
         self.fast_health_regen = 0
 
-    def deal_damage(self, collider: "Unit", self_hp_before_hit=None):
-        """Deal damage and forward XP to owning Tank."""
-        old_score = self.score
-        # call base damage logic (may increase bullet.score on kill)
-        super(Bullet, self).deal_damage(collider, self_hp_before_hit)
-        # compute XP gained by this bullet
-        xp = self.score - old_score
-        if xp > 0:
-            # Award XP (and skill points) to the Tank properly
-            self.tank.add_score(xp)
-            # Reset bullet's own score buffer
-            self.score = 0
+    def add_score(self, score):
+        self.tank.add_score(score)
 
     def update_counter(self):
         if self.invulberable_frame > 0:

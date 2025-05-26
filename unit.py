@@ -55,7 +55,7 @@ class Unit:
         return self.hp > 0
 
     def add_score(self, score):
-        # TODO: Bullet, Tank should overwrite
+        # Bullet, Tank should overwrite
         self.score += score
 
     def deal_damage(self, collider: "Unit", self_hp_before_hit = None):
