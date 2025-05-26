@@ -11,6 +11,7 @@ from tank import Tank
 from polygon import Polygon
 from collision import CollisionHash
 from bullet import Bullet
+from utils import draw_rectangle
 
 class DiepIOEnvBasic(gym.Env):
     def __init__(self, n_tanks=2, render_mode=True):
@@ -255,14 +256,15 @@ class DiepIOEnvBasic(gym.Env):
                 continue  # unit is completely outside the screen
 
             # Draw orientation line
-            end_x = pixel_x + unit.radius * 2 * grid_size * unit.rx
-            end_y = pixel_y - unit.radius * 2 * grid_size * unit.ry
-            pygame.draw.line(
-                surface, (127, 127, 127),
-                (pixel_x, pixel_y),
-                (end_x, end_y),
-                int(grid_size)
+            barrel_x = pixel_x + unit.radius * grid_size * unit.rx
+            barrel_y = pixel_y - unit.radius * grid_size * unit.ry
+            draw_rectangle(
+                surface, barrel_x, barrel_y,
+                2 * unit.radius * grid_size, grid_size,
+                "#b7b7b7",
+                unit.rx, unit.ry
             )
+
             # Draw body
             color = (0, 127, 255) if unit.id == 0 else (255, 0, 0)
             if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
