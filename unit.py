@@ -54,6 +54,10 @@ class Unit:
     def alive(self):
         return self.hp > 0
 
+    def add_score(self, score):
+        # TODO: Bullet, Tank should overwrite
+        self.score += score
+
     def deal_damage(self, collider: "Unit", self_hp_before_hit = None):
         if self_hp_before_hit == None:
             self_hp_before_hit = self.hp
@@ -69,7 +73,7 @@ class Unit:
             collider.hp -= damage_scale * self.body_damage * self_hp_before_hit / body_dmg
         if collider.hp < 0:
             collider.hp = 0.0
-            self.score += min(collider.score, cfg.EXP_LIST[-1])
+            self.add_score(min(collider.score, cfg.EXP_LIST[-1]))
         else:
             collider.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
             collider.invulberable_frame = cfg.INVULNERABLE_FRAMES

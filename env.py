@@ -113,7 +113,7 @@ class DiepIOEnvBasic(gym.Env):
             else:
                 obs.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         return np.array(obs, dtype=np.float32)
-    
+
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         # 1. prepare fonts and dynamic header sizes
         font = pygame.font.Font(None, 24)
@@ -389,7 +389,7 @@ class DiepIOEnvBasic(gym.Env):
                             surface, (0, 216, 0),
                             (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
                         )
-        
+
         # Render skill panel for agent 0
         self.skill_buttons = []  # Clear previous buttons
         tank = self.tanks[agent_id]
@@ -663,7 +663,7 @@ class DiepIOEnvBasic(gym.Env):
                 sys.exit()
 
             self._handle_mouse_click(event)
-            
+
             # Handle number key presses for adding skill points
             if event.type == pygame.KEYDOWN:
                 # map pygame.K_1..pygame.K_8 to skill indices 0..7

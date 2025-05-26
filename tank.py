@@ -27,16 +27,15 @@ class TankStats:
     def __setitem__(self, key, value):
         assert 0 <= value <= 7
 
-        i     = int(key)
+        value = np.uint32(value)
+        i     = np.uint32(key)
         shift = i * 4
         # build a 32-bit mask for the 4 bits we want to clear/set
-        mask     = np.uint32(0b1111) << np.uint32(shift)
+        mask     = np.uint32(0b1111) << shift
         inv_mask = ~mask               # bitwise NOT within uint32
 
         # clear the 4 bits at position, then OR in the new value
-        self.raw = (self.raw & inv_mask) | (np.uint32(value) << np.uint32(shift))
-
-        self.raw = (self.raw & ~mask) | (value << shift)
+        self.raw = (self.raw & inv_mask) | (value << shift)
 
     def add_point(self, attribute_type):
         if self[attribute_type] >= 7:
@@ -127,11 +126,10 @@ class Tank(Unit):
         self.body_damage = 20.0 + self.stats[TST.BodyDamage] * 4.0
 
         # Bullet Speed
-        self.bullet_v_scale = cfg.BASE_BULLET_V_SCALE # TODO
+        self.bullet_v_scale = cfg.BASE_BULLET_V_SCALE + self.stats[TST.BulletSpeed] * 0.06 # TODO
 
         # Bullet Penetration
-        # self.bullet_max_hp = 2.0 + self.stats[TST.BulletPen] * 1.5
-        self.bullet_max_hp = 2.0 + 7 * 1.5
+        self.bullet_max_hp = 2.0 + self.stats[TST.BulletPen] * 1.5
 
         # Bullet Damage
         self.bullet_damage = 7.0 + self.stats[TST.BulletDamage] * 3.0
@@ -151,11 +149,12 @@ class Tank(Unit):
         self.bullet_radius = 0.5 * np.pow(1.01, (self.level - 1))
 
         # Recoil
+        # TODO
 
         # FOV
         self.observation_size = 40.0 + (self.level - 1) * 10.0 / 44
 
-        # Knockback Resistance
+        # Knockback Resistance  # TODO
         # self.stats[TST.BodyDamage], self.stats[TST.Speed]
 
     def deal_damage(self, collider: "Unit", self_hp_before_hit=None):
