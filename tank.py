@@ -76,7 +76,7 @@ class Tank(Unit):
         if self.same_collider_counter_reset_frame <= 0:
             self.same_collider_counter = 0
 
-    def add_score(self, score):
+    def add_score(self, score: int):
         self.score += score
         old_level = self.level
         self.level = self.score2level(self.score)
@@ -155,3 +155,8 @@ class Tank(Unit):
 
         # Knockback Resistance  # TODO
         # self.stats[TST.BodyDamage], self.stats[TST.Speed]
+
+    def calc_respawn_score(self):
+        if self.alive:
+            return
+        self.score = cfg.EXP_LIST[cfg.RESPAWN_LEVEL_LIST[self.level]]

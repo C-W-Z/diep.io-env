@@ -16,13 +16,13 @@ from bullet import Bullet
 from utils import draw_rectangle
 
 class DiepIOEnvBasic(gym.Env):
-    def __init__(self, n_tanks=2, render_mode=True, unlimited_obs=False):
+    def __init__(self, n_tanks=2, render_mode=True, unlimited_obs=False, max_steps=1000000):
         super(DiepIOEnvBasic, self).__init__()
 
         self.n_tanks = n_tanks
         self.n_polygons = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = render_mode
-        self.max_steps = 1000000
+        self.max_steps = max_steps
         self.bullets: list[Bullet] = []
 
         # Maximum number of polygons and tanks to include in the observation
@@ -105,6 +105,8 @@ class DiepIOEnvBasic(gym.Env):
             for _ in range(self.n_polygons)
         ]
 
+        self.prev_tanks_score = [tank.score for tank in self.tanks]
+
         # add all objects to the map
         # TODO: remove separate lists and just use self.everything
         for tank in self.tanks:
@@ -120,7 +122,7 @@ class DiepIOEnvBasic(gym.Env):
         for poly in self.polygons:
             self.colhash.add(poly.x, poly.y, poly.id)
 
-        obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
+        obs = {i: self._get_obs(i) for i in range(self.n_tanks)}
         if self.render_mode:
             self.render()
 
@@ -231,7 +233,6 @@ class DiepIOEnvBasic(gym.Env):
                 np.array(polygon_obs, dtype=np.float32),
                 np.array(bullet_obs, dtype=np.float32)
             )
-
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         # 1. prepare fonts and dynamic header sizes
@@ -839,7 +840,7 @@ class DiepIOEnvBasic(gym.Env):
             tank.move(dx, dy)
             self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
-            rewards[i] += 0.01
+            # rewards[i] += 0.01
 
             if shoot > 0.5 and tank.reload_counter <= 0:
                 bx = tank.x + tank.radius * tank.rx * 2
@@ -894,12 +895,15 @@ class DiepIOEnvBasic(gym.Env):
 
         for i in range(self.n_tanks):
             if not self.tanks[i].alive:
-                dones[i] = True
-                rewards[i] -= 10.0
+                # rewards[i] -= 10.0
+                self.tanks[i].calc_respawn_score()
+            rewards[i] += self.tanks[i].score - self.prev_tanks_score[i]
+            self.prev_tanks_score[i] = self.tanks[i].score
+
         if self.step_count >= self.max_steps or sum(unit.alive for unit in self.tanks) <= 1:
             dones = {i: True for i in range(self.n_tanks)}
 
-        obs = {i: self._get_obs(i) for i in range(self.n_tanks) if self.tanks[i].alive}
+        obs = {i: self._get_obs(i) for i in range(self.n_tanks)}
         if self.render_mode:
             self.render()
         return obs, rewards, dones, False, infos
@@ -926,7 +930,7 @@ class DiepIOEnvBasic(gym.Env):
             pygame.quit()
 
 if __name__ == "__main__":
-    env = DiepIOEnvBasic(n_tanks=2, render_mode=True, unlimited_obs=False)
+    env = DiepIOEnvBasic(n_tanks=2, render_mode=True, unlimited_obs=False, max_steps=1000000)
     # env = DiepIOEnvBasic(n_tanks=2, render_mode=False)
     obs, _ = env.reset()
     print(obs[0].shape, env.observation_space.shape)
@@ -937,6 +941,8 @@ if __name__ == "__main__":
             0: env._get_player_input(),
             1: {"dx": np.random.randint(3), "dy": np.random.randint(3), "rx": 0.0, "ry": 0.0, "s": 1, "i": 0,}
         })
+        # if rewards[0] != 0 or rewards[1] != 0:
+        #     print(rewards)
         # obs, rewards, dones, _, _ = env.step()
         # print(obs[0][0].shape, obs[0][1].shape, obs[0][2].shape, obs[0][3].shape)
         if all(dones.values()):

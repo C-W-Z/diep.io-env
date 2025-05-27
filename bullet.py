@@ -36,7 +36,7 @@ class Bullet(Unit):
         self.slow_health_regen = 0
         self.fast_health_regen = 0
 
-    def add_score(self, score):
+    def add_score(self, score: int):
         self.tank.add_score(score)
 
     def update_counter(self):

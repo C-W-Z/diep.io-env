@@ -55,7 +55,7 @@ class Unit:
     def alive(self):
         return self.hp > 0
 
-    def add_score(self, score):
+    def add_score(self, score: int):
         # Bullet, Tank should overwrite
         self.score += score
 
