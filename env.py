@@ -35,10 +35,10 @@ class DiepIOEnvBasic(gym.Env):
         self.unlimited_obs = unlimited_obs
 
         # Observation space: Includes player state, nearby polygons, and other tanks
-        self.polygon_features = 6  # dx, dy, vx, vy, sides, hp
-        self.tank_features = 6  # dx, dy, distance, hp, level
-        self.bullet_features = 5
-        player_features = 17  # Player's state: 14 base features + all TST stats
+        self.polygon_features = 7  # dx, dy, radius, vx, vy, hp, sides
+        self.tank_features = 7  # dx, dy, radius, vx, vy, hp, level
+        self.bullet_features = 6 # dx, dy, radius, vx, vy, enemy
+        player_features = 16  # Player's state: base features + all TST stats
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -134,7 +134,7 @@ class DiepIOEnvBasic(gym.Env):
         - Nearby polygons (environment shapes) within the screen
         - Relative position, distance, normalized health, and level of other players (tanks) within the screen
         """
-        agent = self.tanks[agent_id]
+        agent: Tank = self.tanks[agent_id]
         # Return zeros if the agent is dead
         if not agent.alive:
             return np.zeros(self.observation_space.shape, dtype=np.float32)
@@ -142,8 +142,9 @@ class DiepIOEnvBasic(gym.Env):
         # 1. Player's own state
         obs = [
             agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE,  # Position
+            agent.radius,
             agent.total_vx, agent.total_vy,  # Velocity
-            agent.rx, agent.ry,  # Direction
+            # agent.rx, agent.ry,  # Direction
             agent.hp / agent.max_hp,  # Normalized health
             agent.level,  # Player level
             agent.skill_points,  # Available skill points
@@ -175,9 +176,10 @@ class DiepIOEnvBasic(gym.Env):
             if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
                 polygon_obs.extend([
                     dx, dy,  # Relative position
+                    obj.radius,
                     obj.total_vx, obj.total_vy,
-                    obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
                     obj.hp / obj.max_hp,  # Normalized health
+                    obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
                 ])
 
         # 3. Other players in the screen
@@ -190,6 +192,7 @@ class DiepIOEnvBasic(gym.Env):
             if min_x <= other_tank.x <= max_x and min_y <= other_tank.y <= max_y:
                 tanks_obs.extend([
                     dx, dy,  # Relative position
+                    other_tank.radius,
                     other_tank.total_vx, other_tank.total_vy,
                     other_tank.hp / other_tank.max_hp,  # Normalized health
                     other_tank.level,  # Level of the other tank
@@ -204,6 +207,7 @@ class DiepIOEnvBasic(gym.Env):
             if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
                 bullet_obs.extend([
                     dx, dy,  # Relative position
+                    bullet.radius,
                     bullet.total_vx, bullet.total_vy,
                     1.0 if bullet.tank.id != agent.id else 0.0
                 ])
