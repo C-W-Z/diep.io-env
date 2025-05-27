@@ -15,14 +15,14 @@ class CollisionHash:
 
     # fetch nearby units
     # Returns: a list of nearby units IDs
-    def nearby(self, x, y, ID, bullet_owner_id=None):
+    def nearby(self, x, y, ID, bullet_owner_id=None, distance=1):
         sz = self.grid.shape[0]
 
         i, j = self.coord2grid(x, y)
         nearby_id = []
 
-        for di in [-1, 0, 1]:
-            for dj in [-1, 0, 1]:
+        for di in range(-distance, distance + 1):
+            for dj in range(-distance, distance + 1):
                 ci, cj = i + di, j + dj
                 if 0 <= ci < sz and 0 <= cj < sz:
                     nearby_id.extend(self.grid[ci, cj])
