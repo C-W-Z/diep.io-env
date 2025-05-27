@@ -825,8 +825,9 @@ class DiepIOEnvBasic(gym.Env):
                 if tank.add_points(skill_index - 1):
                     tank.calc_stats_properties()
 
-            magnitude = np.hypot(rx, ry)
-            if magnitude != 0:
+            # avoid zero-division
+            if rx != 0 or ry != 0:
+                magnitude = np.hypot(rx, ry)
                 tank.rx, tank.ry = rx / magnitude, ry / magnitude
             else:
                 tank.rx, tank.ry = 1.0, 0.0
