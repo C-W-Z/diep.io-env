@@ -25,23 +25,24 @@ class DiepIOEnvBasic(gym.Env):
         self.bullets: list[Bullet] = []
 
         # Maximum number of polygons and tanks to include in the observation
-        self.max_polygons = 10
-        self.max_tanks = self.n_tanks - 1
-
+        self.obs_max_polygons = 10
+        self.obs_max_tanks = self.n_tanks - 1
+        self.obs_max_bullets = 20
         # Observation space: Includes player state, nearby polygons, and other tanks
-        polygon_features = 5  # dx, dy, distance, sides, hp
-        tank_features = 5  # dx, dy, distance, hp, level
+        self.self.polygon_features = 6  # dx, dy, vx, vy, sides, hp
+        self.self.tank_features = 6  # dx, dy, distance, hp, level
+        self.self.bullet_features = 5
         player_features = 14 + len(TST)  # Player's state: 14 base features + all TST stats
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(player_features + self.max_polygons * polygon_features + self.max_tanks * tank_features,),
+            shape=(player_features + self.obs_max_polygons * self.self.polygon_features + self.obs_max_tanks * self.self.tank_features + self.obs_max_bullets * self.self.bullet_features,),
             dtype=np.float32
         )
 
-        # Action space: Movement (dx, dy) and shooting (shoot)
+        # Action space: Movement (dx, dy), rotate (rx, ry), and shooting (shoot)
         self.action_space = spaces.Box(
-            low=np.array([-1, -1, 0]), high=np.array([1, 1, 1]), dtype=np.float32
+            low=np.array([-1, -1, -1, -1, 0]), high=np.array([1, 1, 1, 1, 1]), dtype=np.float32
         )
 
         # Initialize rendering
@@ -196,20 +197,20 @@ class DiepIOEnvBasic(gym.Env):
                 ])
 
         # 4. Pad or truncate to a fixed size
-        max_polygons = 10  # Maximum number of polygons to include
-        max_tanks = self.n_tanks - 1  # Maximum number of other tanks
-        polygon_features = 6  # Features per polygon: dx, dy, distance, sides, hp
-        tank_features = 6  # Features per tank: dx, dy, distance, hp, level
-        max_bullets = 20
-        bullet_features = 5
+        self.obs_max_polygons = 10  # Maximum number of polygons to include
+        self.obs_max_tanks = self.n_tanks - 1  # Maximum number of other tanks
+        self.polygon_features = 6  # Features per polygon: dx, dy, distance, sides, hp
+        self.tank_features = 6  # Features per tank: dx, dy, distance, hp, level
+        self.obs_max_bullets = 20
+        self.bullet_features = 5
 
         # Pad with zeros if fewer polygons or tanks are present
-        polygon_obs.extend([0.0] * max_polygons * polygon_features - len(polygon_obs))
-        tanks_obs.extend([0.0] * max_tanks * tank_features - len(tanks_obs))
-        bullet_obs.extend([0.0] * max_bullets * bullet_features - len(bullet_obs))
+        polygon_obs.extend([0.0] * self.obs_max_polygons * self.polygon_features - len(polygon_obs))
+        tanks_obs.extend([0.0] * self.obs_max_tanks * self.tank_features - len(tanks_obs))
+        bullet_obs.extend([0.0] * self.obs_max_bullets * self.bullet_features - len(bullet_obs))
 
         # Truncate polygons and tanks
-        obs = obs + polygon_obs[:max_polygons * polygon_features] + tanks_obs[:max_tanks * tank_features] + bullet_obs[:max_bullets * bullet_features]
+        obs = obs + polygon_obs[:self.obs_max_polygons * self.polygon_features] + tanks_obs[:self.obs_max_tanks * self.tank_features] + bullet_obs[:self.obs_max_bullets * self.bullet_features]
 
         return np.array(obs, dtype=np.float32)
 
