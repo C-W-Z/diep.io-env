@@ -79,7 +79,7 @@ class DiepIOEnvBasic(gym.Env):
         self.all_things: Dict[int, Union[Tank, Polygon]] = {}
 
         # Collision registry
-        self.colhash = CollisionHash(cfg.BORDER_SIZE + cfg.MAP_SIZE, cfg.MAP_GRID)
+        self.colhash = CollisionHash(cfg.MAP_SIZE, cfg.MAP_GRID)
 
         self.tanks = [
             Tank(
@@ -160,8 +160,7 @@ class DiepIOEnvBasic(gym.Env):
 
         # 2. Nearby polygons in the screen
         polygon_obs = []
-        nearby_polygons = self.colhash.nearby(agent.x, agent.y, agent.id)
-        for obj_id in nearby_polygons:
+        for obj_id in map(lambda poly: poly.id, self.polygons):
             obj = self.all_things[obj_id]
             if obj.type == UnitType.Polygon and obj.alive:
                 dx, dy = obj.x - agent.x, obj.y - agent.y
