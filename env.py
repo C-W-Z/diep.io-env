@@ -29,20 +29,20 @@ class DiepIOEnvBasic(gym.Env):
         self.obs_max_tanks = self.n_tanks - 1
         self.obs_max_bullets = 20
         # Observation space: Includes player state, nearby polygons, and other tanks
-        self.self.polygon_features = 6  # dx, dy, vx, vy, sides, hp
-        self.self.tank_features = 6  # dx, dy, distance, hp, level
-        self.self.bullet_features = 5
-        player_features = 14 + len(TST)  # Player's state: 14 base features + all TST stats
+        self.polygon_features = 6  # dx, dy, vx, vy, sides, hp
+        self.tank_features = 6  # dx, dy, distance, hp, level
+        self.bullet_features = 5
+        player_features = 17  # Player's state: 14 base features + all TST stats
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(player_features + self.obs_max_polygons * self.self.polygon_features + self.obs_max_tanks * self.self.tank_features + self.obs_max_bullets * self.self.bullet_features,),
+            shape=(player_features + self.obs_max_polygons * self.polygon_features + self.obs_max_tanks * self.tank_features + self.obs_max_bullets * self.bullet_features,),
             dtype=np.float32
         )
 
-        # Action space: Movement (dx, dy), rotate (rx, ry), and shooting (shoot)
+        # Action space: Movement (dx, dy), rotate (rx, ry), and shooting (shoot), skill_index (0~8)
         self.action_space = spaces.Box(
-            low=np.array([-1, -1, -1, -1, 0]), high=np.array([1, 1, 1, 1, 1]), dtype=np.float32
+            low=np.array([-1, -1, -1, -1, 0, 0]), high=np.array([1, 1, 1, 1, 1, 8]), dtype=np.float32
         )
 
         # Initialize rendering
@@ -196,18 +196,10 @@ class DiepIOEnvBasic(gym.Env):
                     1.0 if bullet.tank.id != agent.id else 0.0
                 ])
 
-        # 4. Pad or truncate to a fixed size
-        self.obs_max_polygons = 10  # Maximum number of polygons to include
-        self.obs_max_tanks = self.n_tanks - 1  # Maximum number of other tanks
-        self.polygon_features = 6  # Features per polygon: dx, dy, distance, sides, hp
-        self.tank_features = 6  # Features per tank: dx, dy, distance, hp, level
-        self.obs_max_bullets = 20
-        self.bullet_features = 5
-
         # Pad with zeros if fewer polygons or tanks are present
-        polygon_obs.extend([0.0] * self.obs_max_polygons * self.polygon_features - len(polygon_obs))
-        tanks_obs.extend([0.0] * self.obs_max_tanks * self.tank_features - len(tanks_obs))
-        bullet_obs.extend([0.0] * self.obs_max_bullets * self.bullet_features - len(bullet_obs))
+        polygon_obs.extend([0.0] * (self.obs_max_polygons * self.polygon_features - len(polygon_obs)))
+        tanks_obs.extend([0.0] * (self.obs_max_tanks * self.tank_features - len(tanks_obs)))
+        bullet_obs.extend([0.0] * (self.obs_max_bullets * self.bullet_features - len(bullet_obs)))
 
         # Truncate polygons and tanks
         obs = obs + polygon_obs[:self.obs_max_polygons * self.polygon_features] + tanks_obs[:self.obs_max_tanks * self.tank_features] + bullet_obs[:self.obs_max_bullets * self.bullet_features]
@@ -519,12 +511,28 @@ class DiepIOEnvBasic(gym.Env):
         mouse_x, mouse_y = pygame.mouse.get_pos()
         screen_half = cfg.SCREEN_SIZE // 2
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
-        magnitude = np.hypot(rx, ry)
-        self.tanks[0].rx, self.tanks[0].ry = rx / magnitude, ry / magnitude
         # Check for left mouse button click
         if pygame.mouse.get_pressed()[0]:  # Left button is index 0
             shoot = 1.0
-        return np.array([dx, dy, shoot], dtype=np.float32)
+
+        skill_index = 0
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            skill_index = self._handle_mouse_click(event)
+            if skill_index > 0:
+                break
+
+            # Handle number key presses for adding skill points
+            if event.type == pygame.KEYDOWN:
+                # map pygame.K_1..pygame.K_8 to skill indices 1..8
+                if pygame.K_1 <= event.key <= pygame.K_8:
+                    skill_index = event.key - pygame.K_1 + 1  # 1-based
+                    break
+
+        return np.array([dx, dy, rx, ry, shoot, skill_index], dtype=np.float32)
 
     def _get_random_input(self):
         dx, dy, shoot = 0.0, 0.0, 0.0
@@ -541,9 +549,7 @@ class DiepIOEnvBasic(gym.Env):
             magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
         rx, ry = np.random.uniform(-1, 1), np.random.uniform(-1, 1)
-        magnitude = np.hypot(rx, ry)
-        self.tanks[1].rx, self.tanks[1].ry = rx / magnitude, ry / magnitude
-        return np.array([dx, dy, shoot], dtype=np.float32)
+        return np.array([dx, dy, rx, ry, shoot, 0], dtype=np.float32)
 
     def _handle_collisions(self):
         # handle collisions for all tanks & polygons
@@ -746,33 +752,14 @@ class DiepIOEnvBasic(gym.Env):
             mouse_pos = pygame.mouse.get_pos()
             for button_rect, skill_index in self.skill_buttons:
                 if button_rect.collidepoint(mouse_pos):
-                    tank = self.tanks[0]  # Only handle first tank for simplicity
-                    if tank.add_points(skill_index):  # Attempt to add point
-                        tank.calc_stats_properties()  # Update tank properties
-                    break
+                    return skill_index + 1
+        return 0
 
     def step(self, actions=None):
         self.step_count += 1
         rewards = {i: 0.0 for i in range(self.n_tanks)}
         dones = {i: False for i in range(self.n_tanks)}
         infos = {}
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-            self._handle_mouse_click(event)
-
-            # Handle number key presses for adding skill points
-            if event.type == pygame.KEYDOWN:
-                # map pygame.K_1..pygame.K_8 to skill indices 0..7
-                if pygame.K_1 <= event.key <= pygame.K_8:
-                    skill_index = event.key - pygame.K_1  # 0-based
-                    tank = self.tanks[0]  # only handle first tank
-                    # try to add a point; if successful, update properties
-                    if tank.add_points(skill_index):
-                        tank.calc_stats_properties()
 
         if actions is None:
             actions = {}
@@ -788,8 +775,17 @@ class DiepIOEnvBasic(gym.Env):
 
             tank.regen_health()
             tank.update_counter()
-            dx, dy, shoot = action
+            dx, dy, rx, ry, shoot, skill_index = action
             old_x, old_y = tank.x, tank.y
+
+            # try to add a point; if successful, update properties
+            if skill_index > 0:
+                if tank.add_points(skill_index - 1):
+                    tank.calc_stats_properties()
+
+            magnitude = np.hypot(rx, ry)
+            tank.rx, tank.ry = rx / magnitude, ry / magnitude
+
             tank.move(dx, dy)
             self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
@@ -880,9 +876,12 @@ class DiepIOEnvBasic(gym.Env):
             pygame.quit()
 
 if __name__ == "__main__":
+    # env = DiepIOEnvBasic(n_tanks=2, render_mode=False)
     env = DiepIOEnvBasic(n_tanks=2, render_mode=True)
     obs, _ = env.reset()
+    print(obs[0].shape, env.observation_space.shape, env.action_space.shape)
     while True:
+        # obs, rewards, dones, _, _ = env.step({i: [0] * 6 for i in range(env.n_tanks)})
         obs, rewards, dones, _, _ = env.step()
         if all(dones.values()):
             break
