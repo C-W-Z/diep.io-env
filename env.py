@@ -15,7 +15,7 @@ from bullet import Bullet
 from utils import draw_rectangle
 
 class DiepIOEnvBasic(gym.Env):
-    def __init__(self, n_tanks=2, render_mode=True):
+    def __init__(self, n_tanks=2, render_mode=True, unlimited_obs=False):
         super(DiepIOEnvBasic, self).__init__()
 
         self.n_tanks = n_tanks
@@ -28,6 +28,10 @@ class DiepIOEnvBasic(gym.Env):
         self.obs_max_polygons = 10
         self.obs_max_tanks = self.n_tanks - 1
         self.obs_max_bullets = 20
+
+        # UNLIMITED (observational) POWER
+        self.unlimited_obs = unlimited_obs
+
         # Observation space: Includes player state, nearby polygons, and other tanks
         self.polygon_features = 6  # dx, dy, vx, vy, sides, hp
         self.tank_features = 6  # dx, dy, distance, hp, level
@@ -188,7 +192,7 @@ class DiepIOEnvBasic(gym.Env):
         bullet_obs = []
         for bullet in self.bullets:
             dx, dy = bullet.x - agent.x, bullet.y - agent.y
-            # Check if the other tank is in the screen
+            # Check if the bullet is in the screen
             if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
                 bullet_obs.extend([
                     dx, dy,  # Relative position
@@ -196,15 +200,26 @@ class DiepIOEnvBasic(gym.Env):
                     1.0 if bullet.tank.id != agent.id else 0.0
                 ])
 
-        # Pad with zeros if fewer polygons or tanks are present
-        polygon_obs.extend([0.0] * (self.obs_max_polygons * self.polygon_features - len(polygon_obs)))
-        tanks_obs.extend([0.0] * (self.obs_max_tanks * self.tank_features - len(tanks_obs)))
-        bullet_obs.extend([0.0] * (self.obs_max_bullets * self.bullet_features - len(bullet_obs)))
+        # 4. Pad or truncate to a fixed size
+        if not self.unlimited_obs:
+            # Pad with zeros if fewer polygons or tanks are present
+            polygon_obs.extend([0.0] * (self.obs_max_polygons * self.polygon_features - len(polygon_obs)))
+            tanks_obs.extend([0.0] * (self.obs_max_tanks * self.tank_features - len(tanks_obs)))
+            bullet_obs.extend([0.0] * (self.obs_max_bullets * self.bullet_features - len(bullet_obs)))
 
-        # Truncate polygons and tanks
-        obs = obs + polygon_obs[:self.obs_max_polygons * self.polygon_features] + tanks_obs[:self.obs_max_tanks * self.tank_features] + bullet_obs[:self.obs_max_bullets * self.bullet_features]
+            # Truncate polygons and tanks
+            obs = obs + polygon_obs[:self.obs_max_polygons * self.polygon_features] + tanks_obs[:self.obs_max_tanks * self.tank_features] + bullet_obs[:self.obs_max_bullets * self.bullet_features]
 
-        return np.array(obs, dtype=np.float32)
+            return np.array(obs, dtype=np.float32)
+        # 4b. or just send it
+        else:
+            return (
+                np.array(obs, dtype=np.float32),
+                np.array(tanks_obs, dtype=np.float32),
+                np.array(polygon_obs, dtype=np.float32),
+                np.array(bullet_obs, dtype=np.float32)
+            )
+
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         # 1. prepare fonts and dynamic header sizes
@@ -876,13 +891,13 @@ class DiepIOEnvBasic(gym.Env):
             pygame.quit()
 
 if __name__ == "__main__":
-    # env = DiepIOEnvBasic(n_tanks=2, render_mode=False)
-    env = DiepIOEnvBasic(n_tanks=2, render_mode=True)
+    env = DiepIOEnvBasic(n_tanks=2, render_mode=True, unlimited_obs=False)
     obs, _ = env.reset()
     print(obs[0].shape, env.observation_space.shape, env.action_space.shape)
     while True:
         # obs, rewards, dones, _, _ = env.step({i: [0] * 6 for i in range(env.n_tanks)})
         obs, rewards, dones, _, _ = env.step()
+        # print(obs[0][0].shape, obs[0][1].shape, obs[0][2].shape, obs[0][3].shape)
         if all(dones.values()):
             break
     env.close()
