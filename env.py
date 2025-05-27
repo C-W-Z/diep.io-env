@@ -26,7 +26,7 @@ class DiepIOEnvBasic(gym.Env):
 
         # Maximum number of polygons and tanks to include in the observation
         self.max_polygons = 10
-        self.max_tanks = self.n_tanks - 1
+        self.max_tanks = self.n_tanks - 1 
 
         # Observation space: Includes player state, nearby polygons, and other tanks
         polygon_features = 5  # dx, dy, distance, sides, hp
@@ -56,6 +56,20 @@ class DiepIOEnvBasic(gym.Env):
             self.observation_space = spaces.Box(
                 low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8
             )
+
+        # Initialize tanks and set observation size
+        self.tanks = [
+            Tank(
+                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                max_hp=self.tank_max_hp,
+                score=0,
+            )
+            for _ in range(self.n_tanks)
+        ]
+        self.observation_size = cfg.SCREEN_SIZE  # Define observation size in the config
+        for tank in self.tanks:
+            tank.observation_size = self.observation_size
 
         self.reset()
 
@@ -124,15 +138,15 @@ class DiepIOEnvBasic(gym.Env):
         Generate the observation for the given agent.
         Includes:
         - Player's own state (position, velocity, direction, health, level, skill points, and stats)
-        - Nearby polygons (environment shapes)
-        - Relative position, distance, normalized health, and level of other players (tanks)
+        - Nearby polygons (environment shapes) within the screen
+        - Relative position, distance, normalized health, and level of other players (tanks) within the screen
         """
         agent = self.tanks[agent_id]
+        # Return zeros if the agent is dead
         if not agent.alive:
-            # Return zeros if the agent is dead
             return np.zeros(self.observation_space.shape, dtype=np.float32)
 
-        # 1. Player's own state (position, velocity, direction, health, level, skill points, and stats)
+        # 1. Player's own state
         obs = [
             agent.x, agent.y,  # Position
             agent.vx, agent.vy,  # Velocity
@@ -151,32 +165,43 @@ class DiepIOEnvBasic(gym.Env):
             agent.stats[TST.Speed],  # Speed level
         ]
 
-        # 2. Nearby polygons (environment shapes)
+        # Observation range
+        observation_size = agent.observation_size
+        min_x = agent.x - observation_size / 2
+        max_x = agent.x + observation_size / 2
+        min_y = agent.y - observation_size / 2
+        max_y = agent.y + observation_size / 2
+
+        # 2. Nearby polygons in the screen
         nearby_polygons = self.colhash.nearby(agent.x, agent.y, agent.id)
         for obj_id in nearby_polygons:
             obj = self.all_things[obj_id]
             if obj.type == UnitType.Polygon and obj.alive:
                 dx, dy = obj.x - agent.x, obj.y - agent.y
                 distance = np.hypot(dx, dy)
-                obs.extend([
-                    dx, dy,  # Relative position
-                    distance,  # Distance to the polygon
-                    obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
-                    obj.hp / obj.max_hp,  # Normalized health
-                ])
+                # Check if the polygon is in the screen
+                if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
+                    obs.extend([
+                        dx, dy,  # Relative position
+                        distance,  # Distance to the polygon
+                        obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
+                        obj.hp / obj.max_hp,  # Normalized health
+                    ])
 
-        # 3. Relative position, distance, normalized health, and level of other players (tanks)
+        # 3. Other players in the screen
         for other_id, other_tank in enumerate(self.tanks):
             if other_id == agent_id or not other_tank.alive:
                 continue
             dx, dy = other_tank.x - agent.x, other_tank.y - agent.y
             distance = np.hypot(dx, dy)
-            obs.extend([
-                dx, dy,  # Relative position
-                distance,  # Distance to the other tank
-                other_tank.hp / other_tank.max_hp,  # Normalized health
-                other_tank.level,  # Level of the other tank
-            ])
+            # Check if the other tank is in the screen
+            if min_x <= other_tank.x <= max_x and min_y <= other_tank.y <= max_y:
+                obs.extend([
+                    dx, dy,  # Relative position
+                    distance,  # Distance to the other tank
+                    other_tank.hp / other_tank.max_hp,  # Normalized health
+                    other_tank.level,  # Level of the other tank
+                ])
 
         # 4. Pad or truncate to a fixed size
         max_polygons = 10  # Maximum number of polygons to include
