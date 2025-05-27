@@ -1,4 +1,5 @@
 import gymnasium as gym
+from gymnasium.spaces import Dict as gymDict, Discrete, Box
 import numpy as np
 from gymnasium import spaces
 import pygame
@@ -25,9 +26,9 @@ class DiepIOEnvBasic(gym.Env):
         self.bullets: list[Bullet] = []
 
         # Maximum number of polygons and tanks to include in the observation
-        self.obs_max_polygons = 10
+        self.obs_max_polygons = 25
         self.obs_max_tanks = self.n_tanks - 1
-        self.obs_max_bullets = 20
+        self.obs_max_bullets = 25
         # Observation space: Includes player state, nearby polygons, and other tanks
         self.polygon_features = 6  # dx, dy, vx, vy, sides, hp
         self.tank_features = 6  # dx, dy, distance, hp, level
@@ -41,9 +42,14 @@ class DiepIOEnvBasic(gym.Env):
         )
 
         # Action space: Movement (dx, dy), rotate (rx, ry), and shooting (shoot), skill_index (0~8)
-        self.action_space = spaces.Box(
-            low=np.array([-1, -1, -1, -1, 0, 0]), high=np.array([1, 1, 1, 1, 1, 8]), dtype=np.float32
-        )
+        self.action_space = gymDict({
+            "dx": Discrete(3),  # -1, 0, 1
+            "dy": Discrete(3),  # -1, 0, 1
+            "rx": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
+            "ry": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
+            "s": Discrete(2),  # shoot: 0, 1
+            "i": Discrete(9)  # skill_index: 0, 1, ..., 8
+        })
 
         # Initialize rendering
         if self.render_mode:
@@ -156,19 +162,18 @@ class DiepIOEnvBasic(gym.Env):
 
         # 2. Nearby polygons in the screen
         polygon_obs = []
-        nearby_polygons = self.colhash.nearby(agent.x, agent.y, agent.id)
-        for obj_id in nearby_polygons:
-            obj = self.all_things[obj_id]
-            if obj.type == UnitType.Polygon and obj.alive:
-                dx, dy = obj.x - agent.x, obj.y - agent.y
-                # Check if the polygon is in the screen
-                if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
-                    polygon_obs.extend([
-                        dx, dy,  # Relative position
-                        obj.total_vx, obj.total_vy,
-                        obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
-                        obj.hp / obj.max_hp,  # Normalized health
-                    ])
+        for obj in self.polygons:
+            if not obj.alive:
+                continue
+            dx, dy = obj.x - agent.x, obj.y - agent.y
+            # Check if the polygon is in the screen
+            if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
+                polygon_obs.extend([
+                    dx, dy,  # Relative position
+                    obj.total_vx, obj.total_vy,
+                    obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
+                    obj.hp / obj.max_hp,  # Normalized health
+                ])
 
         # 3. Other players in the screen
         tanks_obs = []
@@ -187,6 +192,8 @@ class DiepIOEnvBasic(gym.Env):
 
         bullet_obs = []
         for bullet in self.bullets:
+            if not bullet.alive:
+                continue
             dx, dy = bullet.x - agent.x, bullet.y - agent.y
             # Check if the other tank is in the screen
             if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
@@ -463,24 +470,25 @@ class DiepIOEnvBasic(gym.Env):
                 )
 
         for bullet in self.bullets:
-            if bullet.alive:
-                rel_x = bullet.x - center_x
-                rel_y = bullet.y - center_y
-                pixel_x = int(screen_half + rel_x * grid_size)
-                pixel_y = int(screen_half + rel_y * grid_size)
-                if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
-                    color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
-                    if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
-                        color = (216, 216, 216)
-                    pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
+            if not bullet.alive:
+                continue
+            rel_x = bullet.x - center_x
+            rel_y = bullet.y - center_y
+            pixel_x = int(screen_half + rel_x * grid_size)
+            pixel_y = int(screen_half + rel_y * grid_size)
+            if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
+                color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
+                if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
+                    color = (216, 216, 216)
+                pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
-                    # Draw HP bar
-                    if bullet.hp < bullet.max_hp:
-                        hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
-                        pygame.draw.rect(
-                            surface, (0, 216, 0),
-                            (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
-                        )
+                # Draw HP bar
+                if bullet.hp < bullet.max_hp:
+                    hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
+                    pygame.draw.rect(
+                        surface, (0, 216, 0),
+                        (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
+                    )
 
         # Render skill panel for agent 0
         self.skill_buttons = []  # Clear previous buttons
@@ -494,16 +502,16 @@ class DiepIOEnvBasic(gym.Env):
         # return obs_array
 
     def _get_player_input(self):
-        dx, dy, shoot = 0.0, 0.0, 0.0
+        dx, dy, shoot = 0, 0, 0
         keys = pygame.key.get_pressed()
         if keys[pygame.K_w]:
-            dy -= 1.0
+            dy -= 1
         if keys[pygame.K_s]:
-            dy += 1.0
+            dy += 1
         if keys[pygame.K_a]:
-            dx -= 1.0
+            dx -= 1
         if keys[pygame.K_d]:
-            dx += 1.0
+            dx += 1
         if dx != 0 or dy != 0:
             magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
@@ -513,7 +521,7 @@ class DiepIOEnvBasic(gym.Env):
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
         # Check for left mouse button click
         if pygame.mouse.get_pressed()[0]:  # Left button is index 0
-            shoot = 1.0
+            shoot = 1
 
         skill_index = 0
         for event in pygame.event.get():
@@ -532,24 +540,42 @@ class DiepIOEnvBasic(gym.Env):
                     skill_index = event.key - pygame.K_1 + 1  # 1-based
                     break
 
-        return np.array([dx, dy, rx, ry, shoot, skill_index], dtype=np.float32)
+        action = {
+            "dx": dx + 1,
+            "dy": dy + 1,
+            "rx": rx,
+            "ry": ry,
+            "s": shoot,
+            "i": skill_index,
+        }
+        return action
+        # return np.array([dx, dy, rx, ry, shoot, skill_index], dtype=np.float32)
 
     def _get_random_input(self):
-        dx, dy, shoot = 0.0, 0.0, 0.0
+        dx, dy, shoot = 0, 0, 0
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP]:
-            dy -= 1.0
+            dy -= 1
         if keys[pygame.K_DOWN]:
-            dy += 1.0
+            dy += 1
         if keys[pygame.K_LEFT]:
-            dx -= 1.0
+            dx -= 1
         if keys[pygame.K_RIGHT]:
-            dx += 1.0
+            dx += 1
         if dx != 0 or dy != 0:
             magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
         rx, ry = np.random.uniform(-1, 1), np.random.uniform(-1, 1)
-        return np.array([dx, dy, rx, ry, shoot, 0], dtype=np.float32)
+        action = {
+            "dx": dx + 1,
+            "dy": dy + 1,
+            "rx": rx,
+            "ry": ry,
+            "s": shoot,
+            "i": 0,
+        }
+        return action
+        # return np.array([dx, dy, rx, ry, shoot, 0], dtype=np.float32)
 
     def _handle_collisions(self):
         # handle collisions for all tanks & polygons
@@ -578,7 +604,7 @@ class DiepIOEnvBasic(gym.Env):
 
     def _handle_bullet_collisions(self):
         """Handle collisions between bullets and tanks/polygons."""
-        for bullet in self.bullets[:]:
+        for bullet in self.bullets:
             if not bullet.alive:
                 continue
 
@@ -775,7 +801,7 @@ class DiepIOEnvBasic(gym.Env):
 
             tank.regen_health()
             tank.update_counter()
-            dx, dy, rx, ry, shoot, skill_index = action
+            dx, dy, rx, ry, shoot, skill_index = action["dx"] - 1, action["dy"] - 1, action["rx"], action["ry"], action["s"], action["i"]
             old_x, old_y = tank.x, tank.y
 
             # try to add a point; if successful, update properties
