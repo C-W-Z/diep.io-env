@@ -38,6 +38,7 @@ class Unit:
         self.x , self.y  = x  , y
         self.rx, self.ry = 1.0, 0.0 # facing direction
         self.vx, self.vy = 0.0, 0.0
+        self.total_vx, self.total_vy = 0.0, 0.0
         self.ax, self.ay = 0.0, 0.0
         self.collision_vx, self.collision_vy = 0.0, 0.0
         self.recoil_vx, self.recoil_vy = 0.0, 0.0
@@ -152,11 +153,11 @@ class Unit:
         else:
             recoil_vx = recoil_vy = 0.0
 
-        final_vx = self.vx + collision_vx + recoil_vx
-        final_vy = self.vy + collision_vy + recoil_vy
+        self.total_vx = self.vx + collision_vx + recoil_vx
+        self.total_vy = self.vy + collision_vy + recoil_vy
 
-        self.x += final_vx
-        self.y += final_vy
+        self.x += self.total_vx
+        self.y += self.total_vy
 
         self.x = np.clip(self.x, self.radius, cfg.MAP_SIZE - self.radius)
         self.y = np.clip(self.y, self.radius, cfg.MAP_SIZE - self.radius)

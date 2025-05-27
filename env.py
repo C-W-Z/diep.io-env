@@ -129,8 +129,8 @@ class DiepIOEnvBasic(gym.Env):
 
         # 1. Player's own state
         obs = [
-            agent.x, agent.y,  # Position
-            agent.vx, agent.vy,  # Velocity
+            agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE,  # Position
+            agent.total_vx, agent.total_vy,  # Velocity
             agent.rx, agent.ry,  # Direction
             agent.hp / agent.max_hp,  # Normalized health
             agent.level,  # Player level
@@ -154,46 +154,62 @@ class DiepIOEnvBasic(gym.Env):
         max_y = agent.y + observation_size / 2
 
         # 2. Nearby polygons in the screen
+        polygon_obs = []
         nearby_polygons = self.colhash.nearby(agent.x, agent.y, agent.id)
         for obj_id in nearby_polygons:
             obj = self.all_things[obj_id]
             if obj.type == UnitType.Polygon and obj.alive:
                 dx, dy = obj.x - agent.x, obj.y - agent.y
-                distance = np.hypot(dx, dy)
                 # Check if the polygon is in the screen
                 if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
-                    obs.extend([
+                    polygon_obs.extend([
                         dx, dy,  # Relative position
-                        distance,  # Distance to the polygon
+                        obj.total_vx, obj.total_vy,
                         obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
                         obj.hp / obj.max_hp,  # Normalized health
                     ])
 
         # 3. Other players in the screen
+        tanks_obs = []
         for other_id, other_tank in enumerate(self.tanks):
             if other_id == agent_id or not other_tank.alive:
                 continue
             dx, dy = other_tank.x - agent.x, other_tank.y - agent.y
-            distance = np.hypot(dx, dy)
             # Check if the other tank is in the screen
             if min_x <= other_tank.x <= max_x and min_y <= other_tank.y <= max_y:
-                obs.extend([
+                tanks_obs.extend([
                     dx, dy,  # Relative position
-                    distance,  # Distance to the other tank
+                    other_tank.total_vx, other_tank.total_vy,
                     other_tank.hp / other_tank.max_hp,  # Normalized health
                     other_tank.level,  # Level of the other tank
+                ])
+
+        bullet_obs = []
+        for bullet in self.bullets:
+            dx, dy = bullet.x - agent.x, bullet.y - agent.y
+            # Check if the other tank is in the screen
+            if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
+                bullet_obs.extend([
+                    dx, dy,  # Relative position
+                    bullet.total_vx, bullet.total_vy,
+                    1.0 if bullet.tank.id != agent.id else 0.0
                 ])
 
         # 4. Pad or truncate to a fixed size
         max_polygons = 10  # Maximum number of polygons to include
         max_tanks = self.n_tanks - 1  # Maximum number of other tanks
-        polygon_features = 5  # Features per polygon: dx, dy, distance, sides, hp
-        tank_features = 5  # Features per tank: dx, dy, distance, hp, level
+        polygon_features = 6  # Features per polygon: dx, dy, distance, sides, hp
+        tank_features = 6  # Features per tank: dx, dy, distance, hp, level
+        max_bullets = 20
+        bullet_features = 5
+
+        # Pad with zeros if fewer polygons or tanks are present
+        polygon_obs.extend([0.0] * max_polygons * polygon_features - len(polygon_obs))
+        tanks_obs.extend([0.0] * max_tanks * tank_features - len(tanks_obs))
+        bullet_obs.extend([0.0] * max_bullets * bullet_features - len(bullet_obs))
 
         # Truncate polygons and tanks
-        obs = obs[:14 + max_polygons * polygon_features + max_tanks * tank_features]
-        # Pad with zeros if fewer polygons or tanks are present
-        obs.extend([0.0] * (14 + max_polygons * polygon_features + max_tanks * tank_features - len(obs)))
+        obs = obs + polygon_obs[:max_polygons * polygon_features] + tanks_obs[:max_tanks * tank_features] + bullet_obs[:max_bullets * bullet_features]
 
         return np.array(obs, dtype=np.float32)
 

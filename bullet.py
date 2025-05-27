@@ -88,18 +88,18 @@ class Bullet(Unit):
             collision_vy = self.collision_vy * factor
             self.collision_frame -= 1
 
-            final_vx = max(self.rx * min_v, self.vx * cfg.BULLET_COLLISION_V_MULTIPLIER) + collision_vx
-            final_vy = max(self.ry * min_v, self.vy * cfg.BULLET_COLLISION_V_MULTIPLIER) + collision_vy
+            self.total_vx = max(self.rx * min_v, self.vx * cfg.BULLET_COLLISION_V_MULTIPLIER) + collision_vx
+            self.total_vy = max(self.ry * min_v, self.vy * cfg.BULLET_COLLISION_V_MULTIPLIER) + collision_vy
         else:
             self.collision_frame = 0
             self.collision_vx = 0.0
             self.collision_vy = 0.0
 
-            final_vx = self.vx
-            final_vy = self.vy
+            self.total_vx = self.vx
+            self.total_vy = self.vy
 
-        self.x += final_vx
-        self.y += final_vy
+        self.x += self.total_vx
+        self.y += self.total_vy
 
         # remove bullet if it goes out of map bounds
         if not (-self.radius <= self.x <= cfg.MAP_SIZE + self.radius and -self.radius <= self.y <= cfg.MAP_SIZE + self.radius):
