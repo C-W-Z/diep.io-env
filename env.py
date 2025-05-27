@@ -15,7 +15,7 @@ from bullet import Bullet
 from utils import draw_rectangle
 
 class DiepIOEnvBasic(gym.Env):
-    def __init__(self, n_tanks=2, render_mode=True, tank_max_hp=50.0, polygon_hp=cfg.POLYGON_HP):
+    def __init__(self, n_tanks=2, render_mode=True):
         super(DiepIOEnvBasic, self).__init__()
 
         self.n_tanks = n_tanks
@@ -26,7 +26,7 @@ class DiepIOEnvBasic(gym.Env):
 
         # Maximum number of polygons and tanks to include in the observation
         self.max_polygons = 10
-        self.max_tanks = self.n_tanks - 1 
+        self.max_tanks = self.n_tanks - 1
 
         # Observation space: Includes player state, nearby polygons, and other tanks
         polygon_features = 5  # dx, dy, distance, sides, hp
@@ -44,10 +44,6 @@ class DiepIOEnvBasic(gym.Env):
             low=np.array([-1, -1, 0]), high=np.array([1, 1, 1]), dtype=np.float32
         )
 
-        # Configurable tank and polygon properties
-        self.tank_max_hp = tank_max_hp
-        self.polygon_hp = polygon_hp
-
         # Initialize rendering
         if self.render_mode:
             pygame.init()
@@ -56,20 +52,6 @@ class DiepIOEnvBasic(gym.Env):
             self.observation_space = spaces.Box(
                 low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8
             )
-
-        # Initialize tanks and set observation size
-        self.tanks = [
-            Tank(
-                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
-                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
-                max_hp=self.tank_max_hp,
-                score=0,
-            )
-            for _ in range(self.n_tanks)
-        ]
-        self.observation_size = cfg.SCREEN_SIZE  # Define observation size in the config
-        for tank in self.tanks:
-            tank.observation_size = self.observation_size
 
         self.reset()
 
@@ -98,7 +80,6 @@ class DiepIOEnvBasic(gym.Env):
             Tank(
                 x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
                 y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
-                max_hp=50.0,
                 score=0,
             )
             for _ in range(self.n_tanks)

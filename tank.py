@@ -49,14 +49,13 @@ class Tank(Unit):
         self,
         x,
         y,
-        max_hp=50.0,
         score=0,
     ):
         super(Tank, self).__init__(
             unit_type=UnitType.Tank,
             x=x,
             y=y,
-            max_hp=max_hp,
+            max_hp=50.0,
             score=score,
         )
         self.level = self.score2level(self.score)
