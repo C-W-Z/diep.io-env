@@ -1,6 +1,6 @@
 # python 3.10.12
 # pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
-# pip install ray[rllib] pygame numpy gymnasium
+# pip install "ray[all]" pygame numpy gymnasium
 absl-py==2.3.0
 attrs==25.3.0
 certifi==2025.4.26

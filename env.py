@@ -36,25 +36,60 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self._agent_ids = {f"agent_{i}" for i in range(self.n_tanks)}
 
         # Observation space (per agent)
-        self.polygon_features = 7
-        self.tank_features = 7
-        self.bullet_features = 6
-        player_features = 16
-        self.observation_space = Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(player_features +
-                   self.obs_max_polygons * self.polygon_features +
-                   self.obs_max_tanks * self.tank_features +
-                   self.obs_max_bullets * self.bullet_features,),
+
+        # === Part 1: Self state ===
+        low = [0.0, 0.0, 0.5, -1.0, -1.0, 0.0, 1.0, 0.0] + [0] * 8
+        high = [1.0, 1.0, 1.6, 1.0, 1.0, 1.0, 45.0, 33.0] + [7] * 8
+
+        # === Part 2: Polygons ===
+        polygon_low = [-50.0, -50.0, 0.5, -1.0, -1.0, 0.0, 3.0]
+        polygon_high = [50.0, 50.0, 1.6, 1.0, 1.0, 1.0, 5.0]
+        self.polygon_features = len(polygon_low)
+
+        # === Part 3: Other Tanks ===
+        tank_low = [-50.0, -50.0, 0.5, -1.0, -1.0, 0.0, 1.0]
+        tank_high = [50.0, 50.0, 1.6, 1.0, 1.0, 1.0, 45.0]
+        self.tank_features = len(tank_low)
+
+        # === Part 4: Bullets ===
+        bullet_low = [-50.0, -50.0, 0.5, -1.0, -1.0, 0.0]
+        bullet_high = [50.0, 50.0, 1.6, 1.0, 1.0, 1.0]
+        self.bullet_features = len(bullet_low)
+
+        # === Padding sizes ===
+        num_polygon = self.obs_max_polygons
+        num_tank = self.obs_max_tanks
+        num_bullet = self.obs_max_bullets
+
+        low += polygon_low * num_polygon
+        high += polygon_high * num_polygon
+
+        low += tank_low * num_tank
+        high += tank_high * num_tank
+
+        low += bullet_low * num_bullet
+        high += bullet_high * num_bullet
+
+        # === Observation space ===
+        self.observation_space = spaces.Box(
+            low=np.array(low, dtype=np.float32),
+            high=np.array(high, dtype=np.float32),
             dtype=np.float32
         )
 
         # Action space (per agent)
-        self.action_space = Tuple((
-            MultiDiscrete([3, 3, 2, 9]),  # dx, dy, shoot, skill_index
-            Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # rx, ry
-        ))
+        self.action_space = spaces.Dict({
+            "d": MultiDiscrete([3, 3, 2, 9]),                       # discrete
+            "c": Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
+        })
+
+        # Create agent space dicts for RLlib multi-agent API compatibility
+        self.observation_space_dict = {
+            agent: self.observation_space for agent in self._agent_ids
+        }
+        self.action_space_dict = {
+            agent: self.action_space for agent in self._agent_ids
+        }
 
         # Initialize rendering
         if self.render_mode:
@@ -122,13 +157,6 @@ class DiepIOEnvBasic(MultiAgentEnv):
         return observations, self._infos
 
     def _get_obs(self, agent_id):
-        """
-        Generate the observation for the given agent.
-        Includes:
-        - Player's own state (position, velocity, direction, health, level, skill points, and stats)
-        - Nearby polygons (environment shapes) within the screen
-        - Relative position, distance, normalized health, and level of other players (tanks) within the screen
-        """
         agent: Tank = self.tanks[agent_id]
         # Return zeros if the agent is dead
         if not agent.alive:
@@ -136,22 +164,22 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # 1. Player's own state
         obs = [
-            agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE,  # Position
-            agent.radius,
-            agent.total_vx, agent.total_vy,  # Velocity
-            # agent.rx, agent.ry,  # Direction
-            agent.hp / agent.max_hp,  # Normalized health
-            agent.level,  # Player level
-            agent.skill_points,  # Available skill points
-            # Tank stats
-            agent.stats[TST.HealthRegen],  # Health regeneration level
-            agent.stats[TST.MaxHealth],  # Max health level
-            agent.stats[TST.BodyDamage],  # Body damage level
-            agent.stats[TST.BulletSpeed],  # Bullet speed level
-            agent.stats[TST.BulletPen],  # Bullet penetration level
-            agent.stats[TST.BulletDamage],  # Bullet damage level
-            agent.stats[TST.Reload],  # Reload level
-            agent.stats[TST.Speed],  # Speed level
+            agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE, # Position [0.0, 1.0]
+            agent.radius,                                   # [0.5, 1.6]
+            agent.total_vx, agent.total_vy,                 # Velocity [-1.0, 1.0]
+            # agent.rx, agent.ry,                           # Direction [-1.0, 1.0]
+            agent.hp / agent.max_hp,                        # Normalized health [0.0, 1.0]
+            agent.level,                                    # Player level [1, 45]
+            agent.skill_points,                             # Available skill points [0, 33]
+            # Tank stats [0, 7]
+            agent.stats[TST.HealthRegen],                   # Health regeneration level
+            agent.stats[TST.MaxHealth],                     # Max health level
+            agent.stats[TST.BodyDamage],                    # Body damage level
+            agent.stats[TST.BulletSpeed],                   # Bullet speed level
+            agent.stats[TST.BulletPen],                     # Bullet penetration level
+            agent.stats[TST.BulletDamage],                  # Bullet damage level
+            agent.stats[TST.Reload],                        # Reload level
+            agent.stats[TST.Speed],                         # Speed level
         ]
 
         # Observation range
@@ -170,11 +198,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
             # Check if the polygon is in the screen
             if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
                 polygon_obs.extend([
-                    dx, dy,  # Relative position
-                    obj.radius,
-                    obj.total_vx, obj.total_vy,
-                    obj.hp / obj.max_hp,  # Normalized health
-                    obj.side,  # Number of sides (3 = triangle, 4 = square, etc.)
+                    dx, dy,                     # Relative position [-50.0, 50.0]
+                    obj.radius,                 # [0.5, 1.6]
+                    obj.total_vx, obj.total_vy, # [-1.0, 1.0]
+                    obj.hp / obj.max_hp,        # Normalized health [0.0, 1.0]
+                    obj.side,                   # Number of sides [3, 5]
                 ])
 
         # 3. Other players in the screen
@@ -186,11 +214,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
             # Check if the other tank is in the screen
             if min_x <= other_tank.x <= max_x and min_y <= other_tank.y <= max_y:
                 tanks_obs.extend([
-                    dx, dy,  # Relative position
-                    other_tank.radius,
-                    other_tank.total_vx, other_tank.total_vy,
-                    other_tank.hp / other_tank.max_hp,  # Normalized health
-                    other_tank.level,  # Level of the other tank
+                    dx, dy,                                     # Relative position [-50.0, 50.0]
+                    other_tank.radius,                          # [0.5, 1.6]
+                    other_tank.total_vx, other_tank.total_vy,   # [-1.0, 1.0]
+                    other_tank.hp / other_tank.max_hp,          # Normalized health [0.0, 1.0]
+                    other_tank.level,                           # Level of the other tank [1, 45]
                 ])
 
         bullet_obs = []
@@ -201,10 +229,10 @@ class DiepIOEnvBasic(MultiAgentEnv):
             # Check if the bullet is in the screen
             if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
                 bullet_obs.extend([
-                    dx, dy,  # Relative position
-                    bullet.radius,
-                    bullet.total_vx, bullet.total_vy,
-                    1.0 if bullet.tank.id != agent.id else 0.0
+                    dx, dy,                                     # Relative position [-50.0, 50.0]
+                    bullet.radius,                              # [0.5, 1.6]
+                    bullet.total_vx, bullet.total_vy,           # [-1.0, 1.0]
+                    1 if bullet.tank.id != agent.id else 0      # Is enemy bullet or not [0, 1]
                 ])
 
         # 4. Pad or truncate to a fixed size
@@ -552,7 +580,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     skill_index = event.key - pygame.K_1 + 1  # 1-based
                     break
 
-        return ([dx_idx, dy_idx, shoot, skill_index], [rx, ry])
+        action = {
+            "d": [dx_idx, dy_idx, shoot, skill_index],
+            "c": [rx, ry]
+        }
+        return action
 
     def _get_random_input(self):
         dx, dy, shoot = 0, 0, 0
@@ -573,7 +605,12 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         shoot = np.random.randint(2)
         skill_index = 0
-        return ([dx_idx, dy_idx, shoot, skill_index], [rx, ry])
+
+        action = {
+            "d": [dx_idx, dy_idx, shoot, skill_index],
+            "c": [rx, ry]
+        }
+        return action
 
     def _handle_collisions(self):
         # handle collisions for all tanks & polygons
@@ -779,7 +816,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     return skill_index + 1
         return 0
 
-    def step(self, actions: dict[str, tuple]) -> tuple[
+    def step(self, actions: dict[str, dict]) -> tuple[
         dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
     ]:
         self.step_count += 1
@@ -798,7 +835,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             tank.regen_health()
             tank.update_counter()
 
-            discrete_action, continuous_action = action
+            discrete_action, continuous_action = action["d"], action["c"]
             dx, dy, shoot, skill_index = discrete_action
             rx, ry = continuous_action
             dx, dy = dx - 1, dy - 1
@@ -932,12 +969,12 @@ if __name__ == "__main__":
     env = DiepIOEnvBasic(env_config)
 
     obs, _ = env.reset()
-    print(obs["agent_0"].shape, env.observation_space.shape)
+    print(obs["agent_0"].shape, env.observation_space.shape) # (348,)
     print(env.action_space)
     while True:
         obs, rewards, dones, truncations, infos = env.step({
             "agent_0": env._get_player_input(),
-            "agent_1": ([np.random.randint(3), np.random.randint(3), 1, 0], [0.0, 0.0])
+            "agent_1": env._get_random_input(),
         })
         if dones["__all__"]:
             break
