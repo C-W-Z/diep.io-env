@@ -13,7 +13,7 @@ from tank import Tank, TST
 from polygon import Polygon
 from collision import CollisionHash
 from bullet import Bullet
-from utils import draw_rectangle
+from utils import check_obs_in_space, draw_rectangle
 
 class DiepIOEnvBasic(MultiAgentEnv):
     metadata = {"name": "diepio_v0"}
@@ -39,22 +39,22 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # Observation space (per agent)
 
         # === Part 1: Self state ===
-        low = [0.0, 0.0, 0.5, -1.0, -1.0, 0.0, 1.0, 0.0] + [0] * 8
-        high = [1.0, 1.0, 1.6, 1.0, 1.0, 1.0, 45.0, 33.0] + [7] * 8
+        low  = [0.0, 0.0, 0.0, -1.0, -1.0, 0.0,  1.0,  0.0] + [0] * 8
+        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 45.0, 33.0] + [7] * 8
 
         # === Part 2: Polygons ===
-        polygon_low = [-50.0, -50.0, 0.5, -1.0, -1.0, 0.0, 3.0]
-        polygon_high = [50.0, 50.0, 1.6, 1.0, 1.0, 1.0, 5.0]
+        polygon_low  = [-50.0, -50.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
+        polygon_high = [ 50.0,  50.0, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
         # === Part 3: Other Tanks ===
-        tank_low = [-50.0, -50.0, 0.5, -1.0, -1.0, 0.0, 1.0]
-        tank_high = [50.0, 50.0, 1.6, 1.0, 1.0, 1.0, 45.0]
+        tank_low  = [-50.0, -50.0, 0.0, -1.0, -1.0, 0.0,  0.0]
+        tank_high = [ 50.0,  50.0, 1.6,  1.0,  1.0, 1.0, 45.0]
         self.tank_features = len(tank_low)
 
         # === Part 4: Bullets ===
-        bullet_low = [-50.0, -50.0, 0.5, -1.0, -1.0, 0.0]
-        bullet_high = [50.0, 50.0, 1.6, 1.0, 1.0, 1.0]
+        bullet_low  = [-50.0, -50.0, 0.0, -1.0, -1.0, 0.0]
+        bullet_high = [ 50.0,  50.0, 1.6,  1.0,  1.0, 1.0]
         self.bullet_features = len(bullet_low)
 
         # === Padding sizes ===
@@ -72,7 +72,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         high += bullet_high * num_bullet
 
         # === Observation space ===
-        single_observation_space = spaces.Box(
+        self.single_observation_space = spaces.Box(
             low=np.array(low, dtype=np.float32),
             high=np.array(high, dtype=np.float32),
             dtype=np.float32
@@ -87,7 +87,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # Create agent space dicts for RLlib multi-agent API compatibility
 
         self.observation_spaces = {
-            agent: single_observation_space for agent in self._agent_ids
+            agent: self.single_observation_space for agent in self._agent_ids
         }
         self.action_spaces = {
             agent: single_action_space for agent in self._agent_ids
@@ -162,7 +162,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         agent: Tank = self.tanks[agent_id]
         # Return zeros if the agent is dead
         if not agent.alive:
-            return np.zeros(self.observation_space.shape, dtype=np.float32)
+            return np.zeros(self.single_observation_space.shape, dtype=np.float32)
 
         # 1. Player's own state
         obs = [
@@ -204,8 +204,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     obj.radius,                 # [0.5, 1.6]
                     obj.total_vx, obj.total_vy, # [-1.0, 1.0]
                     obj.hp / obj.max_hp,        # Normalized health [0.0, 1.0]
-                    obj.side,                   # Number of sides [3, 5]
                 ])
+                side_one_hot = [0, 0, 0]        # type of sides [0, 1]
+                side_one_hot[obj.side - 3] = 1  # obj.side is in [3, 4, 5]
+                polygon_obs.extend(side_one_hot)
+
 
         # 3. Other players in the screen
         tanks_obs = []
@@ -971,13 +974,18 @@ if __name__ == "__main__":
     env = DiepIOEnvBasic(env_config)
 
     obs, _ = env.reset()
-    print(obs["agent_0"].shape, env.observation_space.shape) # (348,)
-    print(env.action_space)
+    print(obs["agent_0"].shape, env.observation_spaces["agent_0"].shape) # (348,)
+    print(env.action_spaces["agent_0"])
+    check_obs_in_space(obs["agent_0"], env.observation_spaces["agent_0"])
+    check_obs_in_space(obs["agent_1"], env.observation_spaces["agent_1"])
+
     while True:
         obs, rewards, dones, truncations, infos = env.step({
             "agent_0": env._get_player_input(),
             "agent_1": env._get_random_input(),
         })
+        check_obs_in_space(obs["agent_0"], env.observation_spaces["agent_0"])
+        check_obs_in_space(obs["agent_1"], env.observation_spaces["agent_1"])
         if dones["__all__"]:
             break
     env.close()

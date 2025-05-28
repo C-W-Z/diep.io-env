@@ -4,25 +4,25 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from env import DiepIOEnvBasic
 from ray.tune.registry import register_env
 
-# 註冊環境
+# Register environment
 def env_creator(env_config):
     return DiepIOEnvBasic(env_config)
 
 register_env("diepio-v0", env_creator)
 
-# 所有 agent 使用同一個 policy（Self-Play）
+# Policy mapping function
 def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
     return "shared_policy"
 
-# 初始化 Ray
-ray.init(ignore_reinit_error=True)
+# Initialize Ray
+ray.init(ignore_reinit_error=True, include_dashboard=False)
 
-# 初始化臨時環境以取得 obs/action space
+# Get observation and action spaces
 temp_env = DiepIOEnvBasic({"n_tanks": 2})
 obs_space = temp_env.observation_space
 act_space = temp_env.action_space
 
-# 設定 PPO 訓練參數
+# Configure PPO
 config = (
     PPOConfig()
     .api_stack(
@@ -39,10 +39,19 @@ config = (
         }
     )
     .framework("torch")
-    .env_runners(num_env_runners=1,)
+    .resources(
+        num_gpus=1,
+        num_cpus_for_main_process=1
+    )
+    .env_runners(
+        num_env_runners=1,
+        num_gpus_per_env_runner=0,
+        sample_timeout_s=120.0,
+        remote_worker_envs=True
+    )
     .learners(
         num_learners=1,
-        num_gpus_per_learner=1,
+        num_gpus_per_learner=1
     )
     .multi_agent(
         policies={"shared_policy": (None, obs_space, act_space, {})},
@@ -57,7 +66,7 @@ config = (
     )
 )
 
-# 啟動訓練
+# Start training
 tuner = tune.Tuner(
     "PPO",
     param_space=config.to_dict(),
