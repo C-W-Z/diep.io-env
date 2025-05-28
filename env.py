@@ -1,10 +1,10 @@
 import gymnasium as gym
-from gymnasium.spaces import Dict as gymDict, Discrete, Box
+from gymnasium.spaces import Tuple, MultiDiscrete, Box, Dict
 import numpy as np
 from gymnasium import spaces
 import pygame
 import sys
-from typing import Dict, Union
+from typing import Union
 
 from config import config as cfg
 from unit import UnitType, Unit
@@ -39,21 +39,29 @@ class DiepIOEnvBasic(gym.Env):
         self.tank_features = 7  # dx, dy, radius, vx, vy, hp, level
         self.bullet_features = 6 # dx, dy, radius, vx, vy, enemy
         player_features = 16  # Player's state: base features + all TST stats
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(player_features + self.obs_max_polygons * self.polygon_features + self.obs_max_tanks * self.tank_features + self.obs_max_bullets * self.bullet_features,),
-            dtype=np.float32
-        )
+        self.observation_space = Dict({
+            i: spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(player_features + self.obs_max_polygons * self.polygon_features + self.obs_max_tanks * self.tank_features + self.obs_max_bullets * self.bullet_features,),
+                dtype=np.float32
+            ) for i in range(self.n_tanks)
+        })
 
         # Action space: Movement (dx, dy), rotate (rx, ry), and shooting (shoot), skill_index (0~8)
-        self.action_space = gymDict({
-            "dx": Discrete(3),  # -1, 0, 1
-            "dy": Discrete(3),  # -1, 0, 1
-            "rx": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
-            "ry": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
-            "s": Discrete(2),  # shoot: 0, 1
-            "i": Discrete(9)  # skill_index: 0, 1, ..., 8
+        # self.action_space = Dict({
+        #     "dx": Discrete(3),  # -1, 0, 1
+        #     "dy": Discrete(3),  # -1, 0, 1
+        #     "rx": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
+        #     "ry": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
+        #     "s": Discrete(2),  # shoot: 0, 1
+        #     "i": Discrete(9)  # skill_index: 0, 1, ..., 8
+        # })
+        self.action_space = Dict({
+            i: Tuple((
+                MultiDiscrete([3, 3, 2, 9]),  # dx, dy, shoot, skill_index
+                Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # rx, ry
+            )) for i in range(self.n_tanks)
         })
 
         # Initialize rendering
@@ -61,9 +69,9 @@ class DiepIOEnvBasic(gym.Env):
             pygame.init()
             self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
             self.clock = pygame.time.Clock()
-            self.observation_space = spaces.Box(
-                low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8
-            )
+            # self.observation_space = spaces.Box(
+            #     low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8
+            # )
 
         self.reset()
 
@@ -83,7 +91,7 @@ class DiepIOEnvBasic(gym.Env):
         self.step_count = 0
 
         # Mapping of ID -> unit
-        self.all_things: Dict[int, Union[Tank, Polygon]] = {}
+        self.all_things: dict[int, Union[Tank, Polygon]] = {}
 
         # Collision registry
         self.colhash = CollisionHash(cfg.MAP_SIZE, cfg.MAP_GRID)
@@ -561,14 +569,15 @@ class DiepIOEnvBasic(gym.Env):
                     skill_index = event.key - pygame.K_1 + 1  # 1-based
                     break
 
-        action = {
-            "dx": dx + 1,
-            "dy": dy + 1,
-            "rx": rx,
-            "ry": ry,
-            "s": shoot,
-            "i": skill_index,
-        }
+        # action = {
+        #     "dx": dx + 1,
+        #     "dy": dy + 1,
+        #     "rx": rx,
+        #     "ry": ry,
+        #     "s": shoot,
+        #     "i": skill_index,
+        # }
+        action = ([dx, dy, shoot, skill_index], [rx, ry])
         return action
         # return np.array([dx, dy, rx, ry, shoot, skill_index], dtype=np.float32)
 
@@ -587,14 +596,15 @@ class DiepIOEnvBasic(gym.Env):
             magnitude = np.hypot(dx, dy)
             dx, dy = dx / magnitude, dy / magnitude
         rx, ry = np.random.uniform(-1, 1), np.random.uniform(-1, 1)
-        action = {
-            "dx": dx + 1,
-            "dy": dy + 1,
-            "rx": rx,
-            "ry": ry,
-            "s": shoot,
-            "i": 0,
-        }
+        # action = {
+        #     "dx": dx + 1,
+        #     "dy": dy + 1,
+        #     "rx": rx,
+        #     "ry": ry,
+        #     "s": shoot,
+        #     "i": 0,
+        # }
+        action = ([dx, dy, shoot, 0], [rx, ry])
         return action
         # return np.array([dx, dy, rx, ry, shoot, 0], dtype=np.float32)
 
@@ -822,7 +832,12 @@ class DiepIOEnvBasic(gym.Env):
 
             tank.regen_health()
             tank.update_counter()
-            dx, dy, rx, ry, shoot, skill_index = action["dx"] - 1, action["dy"] - 1, action["rx"], action["ry"], action["s"], action["i"]
+            # dx, dy, rx, ry, shoot, skill_index = action["dx"] - 1, action["dy"] - 1, action["rx"], action["ry"], action["s"], action["i"]
+            # print(action)
+            discrete_action, continuous_action = action
+            dx, dy, shoot, skill_index = discrete_action
+            rx, ry = continuous_action
+
             old_x, old_y = tank.x, tank.y
 
             # try to add a point; if successful, update properties
@@ -933,13 +948,13 @@ if __name__ == "__main__":
     env = DiepIOEnvBasic(n_tanks=2, render_mode=True, unlimited_obs=False, max_steps=1000000)
     # env = DiepIOEnvBasic(n_tanks=2, render_mode=False)
     obs, _ = env.reset()
-    print(obs[0].shape, env.observation_space.shape)
+    print(obs[0].shape, env.observation_space[0].shape)
     print(env.action_space)
     while True:
         # obs, rewards, dones, _, _ = env.step({i: [0] * 6 for i in range(env.n_tanks)})
         obs, rewards, dones, _, _ = env.step({
             0: env._get_player_input(),
-            1: {"dx": np.random.randint(3), "dy": np.random.randint(3), "rx": 0.0, "ry": 0.0, "s": 1, "i": 0,}
+            1: ([np.random.randint(3), np.random.randint(3), 1, 0], [0.0, 0.0])
         })
         # if rewards[0] != 0 or rewards[1] != 0:
         #     print(rewards)
