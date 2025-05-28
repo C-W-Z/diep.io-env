@@ -69,21 +69,12 @@ config = (
 )
 
 # Start training
-tuner = tune.Tuner(
-    "PPO",
-    param_space=config.to_dict(),
-    run_config=tune.RunConfig(
-        stop={"training_iteration": 100000},
-        name="diepio_selfplay",
-        checkpoint_config=tune.CheckpointConfig(
-            checkpoint_at_end=True,
-            checkpoint_frequency=10,
-            num_to_keep=3,
-            # checkpoint_score_attribute="episode_reward_mean",
-            # checkpoint_score_order="max"
-        ),
-        verbose=1
-    )
+tuner = tune.Tuner.restore(
+    path="/home/cwz/ray_results/diepio_selfplay",  # 先前的 Tuner 輸出目錄
+    trainable="PPO",
+    resume_unfinished=True,        # ✅ 重新開始沒跑完的 trial
+    restart_errored=True,          # ✅ 自動重跑有錯的 trial
+    resume_errored=True            # ✅ 繼續上次出錯的
 )
 
 results = tuner.fit()
