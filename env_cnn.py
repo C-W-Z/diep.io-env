@@ -114,7 +114,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         observations = {agent: self._get_obs(i) for i, agent in enumerate(self._agent_ids)}
         if self.render_mode:
-            self.render(observations[self._agent_ids[0]])
+            self.render()
         return observations, self._infos
 
     def _get_obs(self, agent_id):
@@ -123,7 +123,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         if not agent.alive:
             return np.zeros(self.observation_space.shape, dtype=np.uint8)
 
-        return pygame.surfarray.array3d(self._get_frame(agent_id))
+        return pygame.surfarray.array3d(self._get_frame(agent_id, for_render=False))
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         # 1. prepare fonts and dynamic header sizes
@@ -212,7 +212,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
             self.skill_buttons.append((btn, i))
 
-    def _get_frame(self, agent_id):
+    def _get_frame(self, agent_id, for_render=False):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
         surface = pygame.Surface((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
         surface.fill((255, 255, 255))  # White background
@@ -243,31 +243,32 @@ class DiepIOEnvBasic(MultiAgentEnv):
             pygame.draw.rect(surface, black_color, (0, bottom_boundary, cfg.SCREEN_SIZE, cfg.SCREEN_SIZE - bottom_boundary))
 
         # Draw grid lines (spacing = 1 map units)
-        grid_color = (150, 150, 150)  # Light gray
-        # Calculate visible grid lines
-        min_x = max(0, center_x - observation_size / 2)
-        max_x = min(cfg.MAP_SIZE, center_x + observation_size / 2)
-        min_y = max(0, center_y - observation_size / 2)
-        max_y = min(cfg.MAP_SIZE, center_y + observation_size / 2)
-        # Grid line positions
-        x_grid = np.arange(np.ceil(min_x), np.floor(max_x) + 1)
-        y_grid = np.arange(np.ceil(min_y), np.floor(max_y) + 1)
+        if for_render:
+            grid_color = (150, 150, 150)  # Light gray
+            # Calculate visible grid lines
+            min_x = max(0, center_x - observation_size / 2)
+            max_x = min(cfg.MAP_SIZE, center_x + observation_size / 2)
+            min_y = max(0, center_y - observation_size / 2)
+            max_y = min(cfg.MAP_SIZE, center_y + observation_size / 2)
+            # Grid line positions
+            x_grid = np.arange(np.ceil(min_x), np.floor(max_x) + 1)
+            y_grid = np.arange(np.ceil(min_y), np.floor(max_y) + 1)
 
-        left_boundary = int(screen_half + (0 - center_x) * grid_size)  # x = 0
-        right_boundary = int(screen_half + (cfg.MAP_SIZE - center_x) * grid_size)  # x = MAP_SIZE
-        top_boundary = int(screen_half + (0 - center_y) * grid_size)  # y = 0
-        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - center_y) * grid_size)  # y = MAP_SIZE
+            left_boundary = int(screen_half + (0 - center_x) * grid_size)  # x = 0
+            right_boundary = int(screen_half + (cfg.MAP_SIZE - center_x) * grid_size)  # x = MAP_SIZE
+            top_boundary = int(screen_half + (0 - center_y) * grid_size)  # y = 0
+            bottom_boundary = int(screen_half + (cfg.MAP_SIZE - center_y) * grid_size)  # y = MAP_SIZE
 
-        # Draw vertical lines
-        for x in x_grid:
-            pixel_x = int(screen_half + (x - center_x) * grid_size)
-            if 0 <= pixel_x < cfg.SCREEN_SIZE:
-                pygame.draw.line(surface, grid_color, (pixel_x, top_boundary), (pixel_x, bottom_boundary), 1)
-        # Draw horizontal lines
-        for y in y_grid:
-            pixel_y = int(screen_half + (y - center_y) * grid_size)
-            if 0 <= pixel_y < cfg.SCREEN_SIZE:
-                pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
+            # Draw vertical lines
+            for x in x_grid:
+                pixel_x = int(screen_half + (x - center_x) * grid_size)
+                if 0 <= pixel_x < cfg.SCREEN_SIZE:
+                    pygame.draw.line(surface, grid_color, (pixel_x, top_boundary), (pixel_x, bottom_boundary), 1)
+            # Draw horizontal lines
+            for y in y_grid:
+                pixel_y = int(screen_half + (y - center_y) * grid_size)
+                if 0 <= pixel_y < cfg.SCREEN_SIZE:
+                    pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
 
         # Draw all polygons
         for unit in self.polygons:
@@ -395,12 +396,17 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
                 # Draw HP bar
-                # if bullet.hp < bullet.max_hp:
-                #     hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
-                #     pygame.draw.rect(
-                #         surface, (0, 216, 0),
-                #         (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
-                #     )
+                if for_render and bullet.hp < bullet.max_hp:
+                    hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
+                    pygame.draw.rect(
+                        surface, (0, 216, 0),
+                        (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
+                    )
+
+        if for_render:
+            # Render skill panel for agent 0
+            self.skill_buttons = []  # Clear previous buttons
+            self._render_skill_panel(self.tanks[0], surface, 10, cfg.SCREEN_SIZE - 260)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
@@ -800,11 +806,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
             self._dones["__all__"] = True
 
         if self.render_mode:
-            self.render(observations[self._agent_ids[0]])
+            self.render()
 
         return observations, rewards, self._dones, truncations, self._infos
 
-    def render(self, frame_0: np.ndarray):
+    def render(self):
         if not self.render_mode:
             return
         for event in pygame.event.get():
@@ -815,10 +821,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Render only agent 0's perspective
         if self.tanks[0].alive:
-            surface = pygame.surfarray.make_surface(frame_0)
-            # Render skill panel for agent 0
-            self.skill_buttons = []  # Clear previous buttons
-            self._render_skill_panel(self.tanks[0], surface, 10, cfg.SCREEN_SIZE - 260)  # Left-bottom position
+            surface = self._get_frame(0, for_render=True)
             self.screen.blit(surface, (0, 0))
 
         pygame.display.flip()
