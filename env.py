@@ -161,7 +161,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
     def _get_obs(self, agent_id):
         agent: Tank = self.tanks[agent_id]
         # Return zeros if the agent is dead
-        if not agent.alive:
+        if not agent.alive and not self.unlimited_obs:
             return np.zeros(self.observation_space.shape, dtype=np.float32)
 
         # 1. Player's own state
