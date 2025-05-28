@@ -15,14 +15,13 @@ def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
     return "shared_policy"
 
 # Initialize Ray
-ray.init(ignore_reinit_error=True, include_dashboard=False)
+ray.init(ignore_reinit_error=True)
 
 # Get observation and action spaces
 temp_env = DiepIOEnvBasic({"n_tanks": 2})
 obs_space = temp_env.observation_space
 act_space = temp_env.action_space
 
-# Configure PPO
 # Configure PPO
 config = (
     PPOConfig()

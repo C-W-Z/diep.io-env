@@ -72,14 +72,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
         high += bullet_high * num_bullet
 
         # === Observation space ===
-        self.single_observation_space = spaces.Box(
+        self.observation_space = spaces.Box(
             low=np.array(low, dtype=np.float32),
             high=np.array(high, dtype=np.float32),
             dtype=np.float32
         )
 
         # Action space (per agent)
-        single_action_space = spaces.Dict({
+        self.action_space = spaces.Dict({
             "d": MultiDiscrete([3, 3, 2, 9]),                       # discrete
             "c": Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
         })
@@ -87,10 +87,10 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # Create agent space dicts for RLlib multi-agent API compatibility
 
         self.observation_spaces = {
-            agent: self.single_observation_space for agent in self._agent_ids
+            agent: self.observation_space for agent in self._agent_ids
         }
         self.action_spaces = {
-            agent: single_action_space for agent in self._agent_ids
+            agent: self.action_space for agent in self._agent_ids
         }
 
         # Initialize rendering
@@ -162,7 +162,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         agent: Tank = self.tanks[agent_id]
         # Return zeros if the agent is dead
         if not agent.alive:
-            return np.zeros(self.single_observation_space.shape, dtype=np.float32)
+            return np.zeros(self.observation_space.shape, dtype=np.float32)
 
         # 1. Player's own state
         obs = [

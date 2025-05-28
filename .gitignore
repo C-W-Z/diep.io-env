@@ -1,3 +1,4 @@
 .venv
 _*.py
 *__pycache__*
+*.log
