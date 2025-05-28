@@ -28,12 +28,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self.possible_agents = [f"agent_{i}" for i in range(self.n_tanks)]
 
         # Observation space (per agent)
-        self.observation_space = spaces.Box(
-            low=0,
-            high=255,
-            shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3),
-            dtype=np.uint8
-        )
+        self.observation_space = spaces.Dict({
+            "i":spaces.Box(low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8), # image
+            "s": spaces.Box(                                                                              # stats
+                low=np.array([0, 1, 0] + [0] * 8),
+                high=np.array([1, 45, 33] + [7] * 8),
+                dtype=np.float32
+            )  # HP/maxHP, Level, skill points, 8 stats
+        })
 
         # Action space (per agent)
         self.action_space = spaces.Dict({
@@ -62,7 +64,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
     def _rand_poly_side():
         return np.random.choice([3, 4, 5], p=cfg.POLYGON_SIDE_PROB_LIST)
 
-    def reset(self, *, seed=None, options=None) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    def reset(self, *, seed=None, options=None) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, Any]]:
         Unit.reset_id_iter()
 
         self.agents = self.possible_agents
@@ -123,7 +125,22 @@ class DiepIOEnvBasic(MultiAgentEnv):
         if not agent.alive:
             return np.zeros(self.observation_space.shape, dtype=np.uint8)
 
-        return pygame.surfarray.array3d(self._get_frame(agent_id, for_render=False))
+        image = pygame.surfarray.array3d(self._get_frame(agent_id, for_render=False))
+        stats = np.array([
+            agent.hp / agent.max_hp,        # [0.0, 1.0]
+            agent.level,                    # [1, 45]
+            agent.skill_points,             # [0, 33]
+            agent.stats[TST.HealthRegen],   # [0, 7]
+            agent.stats[TST.MaxHealth],     # [0, 7]
+            agent.stats[TST.BodyDamage],    # [0, 7]
+            agent.stats[TST.BulletSpeed],   # [0, 7]
+            agent.stats[TST.BulletPen],     # [0, 7]
+            agent.stats[TST.BulletDamage],  # [0, 7]
+            agent.stats[TST.Reload],        # [0, 7]
+            agent.stats[TST.Speed],         # [0, 7]
+        ], dtype=np.float32)
+
+        return {"i": image, "s": stats} # image, stats
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         # 1. prepare fonts and dynamic header sizes
@@ -842,18 +859,21 @@ if __name__ == "__main__":
     env = DiepIOEnvBasic(env_config)
 
     obs, _ = env.reset()
-    print(obs["agent_0"].shape, env.observation_spaces["agent_0"].shape) # (348,)
-    print(env.action_spaces["agent_0"])
-    check_obs_in_space(obs["agent_0"], env.observation_spaces["agent_0"])
-    # check_obs_in_space(obs["agent_1"], env.observation_spaces["agent_1"])
+    print(env.observation_space)
+    print(env.action_space)
+    for i in range(2):
+        for key in obs[f"agent_{i}"].keys():
+            check_obs_in_space(obs[f"agent_{i}"][key], env.observation_spaces[f"agent_{i}"][key])
 
     while True:
         obs, rewards, dones, truncations, infos = env.step({
             "agent_0": env._get_player_input(),
             "agent_1": env._get_random_input(),
         })
-        check_obs_in_space(obs["agent_0"], env.observation_spaces["agent_0"])
-        # check_obs_in_space(obs["agent_1"], env.observation_spaces["agent_1"])
+        for i in range(2):
+            for key in obs[f"agent_{i}"].keys():
+                check_obs_in_space(obs[f"agent_{i}"][key], env.observation_spaces[f"agent_{i}"][key])
+
         if dones["__all__"]:
             break
     env.close()
