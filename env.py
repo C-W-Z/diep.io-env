@@ -8,8 +8,7 @@ from typing import Union
 
 from config import config as cfg
 from unit import UnitType, Unit
-from tank import Tank
-from tank import TST
+from tank import Tank, TST
 from polygon import Polygon
 from collision import CollisionHash
 from bullet import Bullet
@@ -77,12 +76,7 @@ class DiepIOEnvBasic(gym.Env):
 
     @staticmethod
     def _rand_poly_side():
-        r = np.random.rand()
-        if r < cfg.POLYGON_SIDE_PROB[5]:
-            return 5
-        elif r < cfg.POLYGON_SIDE_PROB[5] + cfg.POLYGON_SIDE_PROB[4]:
-            return 4
-        return 3
+        return np.random.choice([3, 4, 5], p=cfg.POLYGON_SIDE_PROB_LIST)
 
     def reset(self, seed=None, options=None):
         Unit.reset_id_iter()

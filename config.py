@@ -37,6 +37,7 @@ class Config:
 
     N_POLYGON_SCALE                 = 12.5 # n_polygons = floor(n_tanks * N_POLYGON_SCALE)
     POLYGON_SIDE_PROB               = {3: 0.2, 4: 0.7, 5: 0.1}
+    POLYGON_SIDE_PROB_LIST          = list(POLYGON_SIDE_PROB.values())
     POLYGON_RADIUS                  = {3: 1.2, 4: 1.1, 5: 1.8}
     POLYGON_COLLISION_RADIUS        = {3: 0.9, 4: 0.9, 5: 1.6}
     POLYGON_HP                      = {3: 30 , 4: 10 , 5: 100}
