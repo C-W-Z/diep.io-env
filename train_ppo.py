@@ -41,19 +41,19 @@ config = (
     .framework("torch")
     .resources(
         num_gpus=1,
-        num_cpus_for_main_process=2, # 增加 CPU 以處理主進程
+        num_cpus_for_main_process=1, # 增加 CPU 以處理主進程
     )
     .env_runners(
         num_env_runners=1,
+        num_cpus_per_env_runner=1,         # ✅ 降低 CPU 代表降低並行度 => 減少 RAM 壓力
         num_gpus_per_env_runner=0.0,
-        num_cpus_per_env_runner=4,   # 分配更多 CPU 給環境
-        # sample_timeout_s=120.0,
-        remote_worker_envs=True      # 用不同的process跑env
+        remote_worker_envs=False,          # ✅ 改回預設，讓環境內建在主進程 => 避免多 process
+        sample_timeout_s=120.0             # ✅ 放寬 timeout，避免出錯
     )
     .learners(
         num_learners=1,
         num_gpus_per_learner=0.0,
-        num_cpus_per_learner=4       # 分配更多 CPU 給環境
+        num_cpus_per_learner=1
     )
     .multi_agent(
         policies={"shared_policy": (None, obs_space, act_space, {})},
@@ -61,7 +61,8 @@ config = (
         policies_to_train=["shared_policy"]
     )
     .training(
-        train_batch_size=1024,
+        train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
+        minibatch_size=128,         # ✅ 減少分割用記憶體
         gamma=0.99,
         lr=5e-4,
         model={"fcnet_hiddens": [256, 256]}
