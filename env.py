@@ -34,6 +34,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Agent IDs
         self._agent_ids = {f"agent_{i}" for i in range(self.n_tanks)}
+        self.agents = self.possible_agents = [f"agent_{i}" for i in range(self.n_tanks)]
 
         # Observation space (per agent)
 
@@ -71,24 +72,25 @@ class DiepIOEnvBasic(MultiAgentEnv):
         high += bullet_high * num_bullet
 
         # === Observation space ===
-        self.observation_space = spaces.Box(
+        single_observation_space = spaces.Box(
             low=np.array(low, dtype=np.float32),
             high=np.array(high, dtype=np.float32),
             dtype=np.float32
         )
 
         # Action space (per agent)
-        self.action_space = spaces.Dict({
+        single_action_space = spaces.Dict({
             "d": MultiDiscrete([3, 3, 2, 9]),                       # discrete
             "c": Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
         })
 
         # Create agent space dicts for RLlib multi-agent API compatibility
-        self.observation_space_dict = {
-            agent: self.observation_space for agent in self._agent_ids
+
+        self.observation_spaces = {
+            agent: single_observation_space for agent in self._agent_ids
         }
-        self.action_space_dict = {
-            agent: self.action_space for agent in self._agent_ids
+        self.action_spaces = {
+            agent: single_action_space for agent in self._agent_ids
         }
 
         # Initialize rendering
