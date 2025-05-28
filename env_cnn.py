@@ -25,7 +25,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Agent IDs
         self._agent_ids = [f"agent_{i}" for i in range(self.n_tanks)]
-        self.possible_agents = [f"agent_{i}" for i in range(self.n_tanks)]
+        self.possible_agents = self._agent_ids
 
         # Observation space (per agent)
         self.observation_space = spaces.Dict({
@@ -121,9 +121,6 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
     def _get_obs(self, agent_id):
         agent: Tank = self.tanks[agent_id]
-        # Return zeros if the agent is dead
-        if not agent.alive:
-            return np.zeros(self.observation_space.shape, dtype=np.uint8)
 
         image = pygame.surfarray.array3d(self._get_frame(agent_id, for_render=False))
         stats = np.array([
