@@ -23,6 +23,7 @@ obs_space = temp_env.observation_space
 act_space = temp_env.action_space
 
 # Configure PPO
+# Configure PPO
 config = (
     PPOConfig()
     .api_stack(
@@ -41,17 +42,19 @@ config = (
     .framework("torch")
     .resources(
         num_gpus=1,
-        num_cpus_for_main_process=1
+        num_cpus_for_main_process=2, # 增加 CPU 以處理主進程
     )
     .env_runners(
         num_env_runners=1,
-        num_gpus_per_env_runner=0,
-        sample_timeout_s=120.0,
-        remote_worker_envs=True
+        num_gpus_per_env_runner=0.0,
+        num_cpus_per_env_runner=4,   # 分配更多 CPU 給環境
+        # sample_timeout_s=120.0,
+        remote_worker_envs=True      # 用不同的process跑env
     )
     .learners(
         num_learners=1,
-        num_gpus_per_learner=1
+        num_gpus_per_learner=0.0,
+        num_cpus_per_learner=4       # 分配更多 CPU 給環境
     )
     .multi_agent(
         policies={"shared_policy": (None, obs_space, act_space, {})},
@@ -76,7 +79,9 @@ tuner = tune.Tuner(
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
             checkpoint_frequency=10,
-            num_to_keep=3
+            num_to_keep=3,
+            # checkpoint_score_attribute="episode_reward_mean",
+            # checkpoint_score_order="max"
         ),
         verbose=1
     )
