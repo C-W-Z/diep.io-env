@@ -96,7 +96,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
             obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions)
 
             for agent in self.env._agent_ids:
-                if f > 0 and actions[agent]["d"][3] > 0:
+                if f > 0: # skill point should be use only once in skip_frames
                     actions[agent]["d"][3] = 0
 
                 total_rewards[agent] += rewards[agent]
