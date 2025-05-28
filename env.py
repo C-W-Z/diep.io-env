@@ -255,9 +255,9 @@ class DiepIOEnvBasic(MultiAgentEnv):
         else:
             return (
                 np.array(obs, dtype=np.float32),
-                np.array(tanks_obs, dtype=np.float32),
-                np.array(polygon_obs, dtype=np.float32),
-                np.array(bullet_obs, dtype=np.float32)
+                np.array(tanks_obs, dtype=np.float32).reshape(-1, self.tank_features),
+                np.array(polygon_obs, dtype=np.float32).reshape(-1, self.polygon_features),
+                np.array(bullet_obs, dtype=np.float32).reshape(-1, self.bullet_features)
             )
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
