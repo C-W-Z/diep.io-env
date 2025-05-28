@@ -34,7 +34,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Agent IDs
         self._agent_ids = {f"agent_{i}" for i in range(self.n_tanks)}
-        self.agents = self.possible_agents = [f"agent_{i}" for i in range(self.n_tanks)]
+        self.possible_agents = [f"agent_{i}" for i in range(self.n_tanks)]
 
         # Observation space (per agent)
 
@@ -107,6 +107,8 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
     def reset(self, *, seed=None, options=None) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         Unit.reset_id_iter()
+
+        self.agents = self.possible_agents
 
         self.bullets: list[Bullet] = []  # List to store all bullets
         self.step_count = 0
@@ -927,13 +929,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if not tank.alive:
                 tank.calc_respawn_score()
                 self._dones[agent] = True
+                self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
             rewards[agent] = tank.score - self.prev_tanks_score[agent_idx]
             self.prev_tanks_score[agent_idx] = tank.score
             observations[agent] = self._get_obs(agent_idx)
 
         self.step_count += 1
         if (self.step_count >= self.max_steps or
-            sum(tank.alive for tank in self.tanks) <= 1):
+            sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1):
             self._dones = {agent: True for agent in self._agent_ids}
             self._dones["__all__"] = True
 
