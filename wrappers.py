@@ -93,7 +93,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
         dones["__all__"] = False
 
         for f in range(self.skip_frames):
-            obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions)
+            obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
 
             for agent in self.env._agent_ids:
                 if f > 0: # skill point should be use only once in skip_frames
@@ -114,10 +114,10 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
         return processed_obs, total_rewards, dones, truncations, infos
 
-from env_cnn import DiepIOEnvBasic
-from utils import check_obs_in_space
-
 if __name__ == "__main__":
+    from env_cnn import DiepIOEnvBasic
+    from utils import check_obs_in_space
+
     env_config = {
         "n_tanks": 2,
         "render_mode": True,

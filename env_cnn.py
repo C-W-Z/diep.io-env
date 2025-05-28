@@ -700,7 +700,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     return skill_index + 1
         return 0
 
-    def step(self, actions: dict[str, dict]) -> tuple[
+    def step(self, actions: dict[str, dict], skip_frame=False) -> tuple[
         dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
     ]:
         self.step_count += 1
@@ -811,7 +811,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
             rewards[agent] = tank.score - self.prev_tanks_score[agent_idx]
             self.prev_tanks_score[agent_idx] = tank.score
-            observations[agent] = self._get_obs(agent_idx)
+
+            if skip_frame:
+                observations[agent] = {}
+            else:
+                observations[agent] = self._get_obs(agent_idx)
 
         self.step_count += 1
         if (self.step_count >= self.max_steps or
