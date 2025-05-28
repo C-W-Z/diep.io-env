@@ -1,10 +1,11 @@
+from ray.rllib.env import MultiAgentEnv
 import gymnasium as gym
-from gymnasium.spaces import Tuple, MultiDiscrete, Box, Dict
+from gymnasium.spaces import Tuple, MultiDiscrete, Box
 import numpy as np
 from gymnasium import spaces
 import pygame
 import sys
-from typing import Union
+from typing import Union, Any
 
 from config import config as cfg
 from unit import UnitType, Unit
@@ -14,63 +15,52 @@ from collision import CollisionHash
 from bullet import Bullet
 from utils import draw_rectangle
 
-class DiepIOEnvBasic(gym.Env):
-    def __init__(self, n_tanks=2, render_mode=True, unlimited_obs=False, max_steps=1000000):
-        super(DiepIOEnvBasic, self).__init__()
+class DiepIOEnvBasic(MultiAgentEnv):
+    metadata = {"name": "diepio_v0"}
 
-        self.n_tanks = n_tanks
-        self.n_polygons = int(np.floor(n_tanks * cfg.N_POLYGON_SCALE))
-        self.render_mode = render_mode
-        self.max_steps = max_steps
-        self.bullets: list[Bullet] = []
+    def __init__(self, env_config: dict[str, Any] = {}):
+        super(DiepIOEnvBasic, self).__init__()
+        self.n_tanks = env_config.get("n_tanks", 2)
+        self.n_polygons = int(np.floor(self.n_tanks * cfg.N_POLYGON_SCALE))
+        self.render_mode = env_config.get("render_mode", False)
+        self.max_steps = env_config.get("max_steps", 1000000)
+        # UNLIMITED (observational) POWER
+        self.unlimited_obs = env_config.get("unlimited_obs", False)
 
         # Maximum number of polygons and tanks to include in the observation
         self.obs_max_polygons = 25
         self.obs_max_tanks = self.n_tanks - 1
         self.obs_max_bullets = 25
-        self.obs_max_bullets = 20
 
-        # UNLIMITED (observational) POWER
-        self.unlimited_obs = unlimited_obs
+        # Agent IDs
+        self._agent_ids = {f"agent_{i}" for i in range(self.n_tanks)}
 
-        # Observation space: Includes player state, nearby polygons, and other tanks
-        self.polygon_features = 7  # dx, dy, radius, vx, vy, hp, sides
-        self.tank_features = 7  # dx, dy, radius, vx, vy, hp, level
-        self.bullet_features = 6 # dx, dy, radius, vx, vy, enemy
-        player_features = 16  # Player's state: base features + all TST stats
-        self.observation_space = Dict({
-            i: spaces.Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(player_features + self.obs_max_polygons * self.polygon_features + self.obs_max_tanks * self.tank_features + self.obs_max_bullets * self.bullet_features,),
-                dtype=np.float32
-            ) for i in range(self.n_tanks)
-        })
+        # Observation space (per agent)
+        self.polygon_features = 7
+        self.tank_features = 7
+        self.bullet_features = 6
+        player_features = 16
+        self.observation_space = Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(player_features +
+                   self.obs_max_polygons * self.polygon_features +
+                   self.obs_max_tanks * self.tank_features +
+                   self.obs_max_bullets * self.bullet_features,),
+            dtype=np.float32
+        )
 
-        # Action space: Movement (dx, dy), rotate (rx, ry), and shooting (shoot), skill_index (0~8)
-        # self.action_space = Dict({
-        #     "dx": Discrete(3),  # -1, 0, 1
-        #     "dy": Discrete(3),  # -1, 0, 1
-        #     "rx": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
-        #     "ry": Box(low=-1, high=1, shape=(1,), dtype=np.float32),  # [-1, 1]
-        #     "s": Discrete(2),  # shoot: 0, 1
-        #     "i": Discrete(9)  # skill_index: 0, 1, ..., 8
-        # })
-        self.action_space = Dict({
-            i: Tuple((
-                MultiDiscrete([3, 3, 2, 9]),  # dx, dy, shoot, skill_index
-                Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # rx, ry
-            )) for i in range(self.n_tanks)
-        })
+        # Action space (per agent)
+        self.action_space = Tuple((
+            MultiDiscrete([3, 3, 2, 9]),  # dx, dy, shoot, skill_index
+            Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # rx, ry
+        ))
 
         # Initialize rendering
         if self.render_mode:
             pygame.init()
             self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
             self.clock = pygame.time.Clock()
-            # self.observation_space = spaces.Box(
-            #     low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8
-            # )
 
         self.reset()
 
@@ -78,7 +68,7 @@ class DiepIOEnvBasic(gym.Env):
     def _rand_poly_side():
         return np.random.choice([3, 4, 5], p=cfg.POLYGON_SIDE_PROB_LIST)
 
-    def reset(self, seed=None, options=None):
+    def reset(self, *, seed=None, options=None) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         Unit.reset_id_iter()
 
         self.bullets: list[Bullet] = []  # List to store all bullets
@@ -110,25 +100,26 @@ class DiepIOEnvBasic(gym.Env):
         self.prev_tanks_score = [tank.score for tank in self.tanks]
 
         # add all objects to the map
+        # add all objects to the collision registry
+
         # TODO: remove separate lists and just use self.everything
         for tank in self.tanks:
             self.all_things[tank.id] = tank
-
-        for poly in self.polygons:
-            self.all_things[poly.id] = poly
-
-        # add all objects to the collision registry
-        for tank in self.tanks:
             self.colhash.add(tank.x, tank.y, tank.id)
 
         for poly in self.polygons:
+            self.all_things[poly.id] = poly
             self.colhash.add(poly.x, poly.y, poly.id)
 
-        obs = {i: self._get_obs(i) for i in range(self.n_tanks)}
+        # Initialize RLlib dictionaries
+        self._dones = {agent: False for agent in self._agent_ids}
+        self._dones["__all__"] = False
+        self._infos = {agent: {} for agent in self._agent_ids}
+
+        observations = {agent: self._get_obs(i) for i, agent in enumerate(self._agent_ids)}
         if self.render_mode:
             self.render()
-
-        return obs, {}
+        return observations, self._infos
 
     def _get_obs(self, agent_id):
         """
@@ -527,21 +518,21 @@ class DiepIOEnvBasic(gym.Env):
     def _get_player_input(self):
         dx, dy, shoot = 0, 0, 0
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_w]:
-            dy -= 1
-        if keys[pygame.K_s]:
-            dy += 1
-        if keys[pygame.K_a]:
-            dx -= 1
-        if keys[pygame.K_d]:
-            dx += 1
-        if dx != 0 or dy != 0:
-            magnitude = np.hypot(dx, dy)
-            dx, dy = dx / magnitude, dy / magnitude
+        if keys[pygame.K_w]: dy -= 1
+        if keys[pygame.K_s]: dy += 1
+        if keys[pygame.K_a]: dx -= 1
+        if keys[pygame.K_d]: dx += 1
+        dx_idx = int(dx + 1)
+        dy_idx = int(dy + 1)
+
         # Update tank direction based on mouse position
         mouse_x, mouse_y = pygame.mouse.get_pos()
         screen_half = cfg.SCREEN_SIZE // 2
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
+        if rx != 0 or ry != 0:
+            magnitude = np.hypot(rx, ry)
+            rx, ry = rx / magnitude, ry / magnitude
+
         # Check for left mouse button click
         if pygame.mouse.get_pressed()[0]:  # Left button is index 0
             shoot = 1
@@ -551,11 +542,9 @@ class DiepIOEnvBasic(gym.Env):
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-
             skill_index = self._handle_mouse_click(event)
             if skill_index > 0:
                 break
-
             # Handle number key presses for adding skill points
             if event.type == pygame.KEYDOWN:
                 # map pygame.K_1..pygame.K_8 to skill indices 1..8
@@ -563,44 +552,28 @@ class DiepIOEnvBasic(gym.Env):
                     skill_index = event.key - pygame.K_1 + 1  # 1-based
                     break
 
-        # action = {
-        #     "dx": dx + 1,
-        #     "dy": dy + 1,
-        #     "rx": rx,
-        #     "ry": ry,
-        #     "s": shoot,
-        #     "i": skill_index,
-        # }
-        action = ([dx, dy, shoot, skill_index], [rx, ry])
-        return action
-        # return np.array([dx, dy, rx, ry, shoot, skill_index], dtype=np.float32)
+        return ([dx_idx, dy_idx, shoot, skill_index], [rx, ry])
 
     def _get_random_input(self):
         dx, dy, shoot = 0, 0, 0
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_UP]:
-            dy -= 1
-        if keys[pygame.K_DOWN]:
-            dy += 1
-        if keys[pygame.K_LEFT]:
-            dx -= 1
-        if keys[pygame.K_RIGHT]:
-            dx += 1
-        if dx != 0 or dy != 0:
-            magnitude = np.hypot(dx, dy)
-            dx, dy = dx / magnitude, dy / magnitude
+        if keys[pygame.K_UP]: dy -= 1
+        if keys[pygame.K_DOWN]: dy += 1
+        if keys[pygame.K_LEFT]: dx -= 1
+        if keys[pygame.K_RIGHT]: dx += 1
+        dx_idx = int(dx + 1)
+        dy_idx = int(dy + 1)
+
         rx, ry = np.random.uniform(-1, 1), np.random.uniform(-1, 1)
-        # action = {
-        #     "dx": dx + 1,
-        #     "dy": dy + 1,
-        #     "rx": rx,
-        #     "ry": ry,
-        #     "s": shoot,
-        #     "i": 0,
-        # }
-        action = ([dx, dy, shoot, 0], [rx, ry])
-        return action
-        # return np.array([dx, dy, rx, ry, shoot, 0], dtype=np.float32)
+        magnitude = np.hypot(rx, ry)
+        if magnitude > 0:
+            rx, ry = rx / magnitude, ry / magnitude
+        else:
+            rx, ry = 1.0, 0.0
+
+        shoot = np.random.randint(2)
+        skill_index = 0
+        return ([dx_idx, dy_idx, shoot, skill_index], [rx, ry])
 
     def _handle_collisions(self):
         # handle collisions for all tanks & polygons
@@ -806,31 +779,29 @@ class DiepIOEnvBasic(gym.Env):
                     return skill_index + 1
         return 0
 
-    def step(self, actions=None):
+    def step(self, actions: dict[str, tuple]) -> tuple[
+        dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
+    ]:
         self.step_count += 1
-        rewards = {i: 0.0 for i in range(self.n_tanks)}
-        dones = {i: False for i in range(self.n_tanks)}
-        infos = {}
+        rewards = {agent: 0.0 for agent in self._agent_ids}
+        observations = {}
+        truncations = {agent: False for agent in self._agent_ids}
 
-        if actions is None:
-            actions = {}
-            if self.tanks[0].alive:
-                actions[0] = self._get_player_input()
-            if self.n_tanks > 1 and self.tanks[1].alive:
-                actions[1] = self._get_random_input()
-
-        for i, action in actions.items():
-            tank: Tank = self.tanks[i]
-            if not tank.alive:
+        # Process actions for each agent
+        for agent, action in actions.items():
+            agent_idx = int(agent.split("_")[1])
+            tank = self.tanks[agent_idx]
+            if not tank.alive or self._dones[agent]:
+                rewards[agent] = 0.0
                 continue
 
             tank.regen_health()
             tank.update_counter()
-            # dx, dy, rx, ry, shoot, skill_index = action["dx"] - 1, action["dy"] - 1, action["rx"], action["ry"], action["s"], action["i"]
-            # print(action)
+
             discrete_action, continuous_action = action
             dx, dy, shoot, skill_index = discrete_action
             rx, ry = continuous_action
+            dx, dy = dx - 1, dy - 1
 
             old_x, old_y = tank.x, tank.y
 
@@ -838,6 +809,11 @@ class DiepIOEnvBasic(gym.Env):
             if skill_index > 0:
                 if tank.add_points(skill_index - 1):
                     tank.calc_stats_properties()
+
+            # avoid zero-division
+            if dx != 0 or dy != 0:
+                magnitude = np.hypot(dx, dy)
+                dx, dy = dx / magnitude, dy / magnitude
 
             # avoid zero-division
             if rx != 0 or ry != 0:
@@ -902,20 +878,27 @@ class DiepIOEnvBasic(gym.Env):
 
         self._handle_collisions()
 
-        for i in range(self.n_tanks):
-            if not self.tanks[i].alive:
-                # rewards[i] -= 10.0
-                self.tanks[i].calc_respawn_score()
-            rewards[i] += self.tanks[i].score - self.prev_tanks_score[i]
-            self.prev_tanks_score[i] = self.tanks[i].score
+        # Compute rewards and observations
+        for agent in self._agent_ids:
+            agent_idx = int(agent.split("_")[1])
+            tank = self.tanks[agent_idx]
+            if not tank.alive:
+                tank.calc_respawn_score()
+                self._dones[agent] = True
+            rewards[agent] = tank.score - self.prev_tanks_score[agent_idx]
+            self.prev_tanks_score[agent_idx] = tank.score
+            observations[agent] = self._get_obs(agent_idx)
 
-        if self.step_count >= self.max_steps or sum(unit.alive for unit in self.tanks) <= 1:
-            dones = {i: True for i in range(self.n_tanks)}
+        self.step_count += 1
+        if (self.step_count >= self.max_steps or
+            sum(tank.alive for tank in self.tanks) <= 1):
+            self._dones = {agent: True for agent in self._agent_ids}
+            self._dones["__all__"] = True
 
-        obs = {i: self._get_obs(i) for i in range(self.n_tanks)}
         if self.render_mode:
             self.render()
-        return obs, rewards, dones, False, infos
+
+        return observations, rewards, self._dones, truncations, self._infos
 
     def render(self):
         if not self.render_mode:
@@ -939,21 +922,23 @@ class DiepIOEnvBasic(gym.Env):
             pygame.quit()
 
 if __name__ == "__main__":
-    env = DiepIOEnvBasic(n_tanks=2, render_mode=True, unlimited_obs=False, max_steps=1000000)
-    # env = DiepIOEnvBasic(n_tanks=2, render_mode=False)
+    env_config = {
+        "n_tanks": 2,
+        "render_mode": True,
+        "max_steps": 1000000,
+        "unlimited_obs": False
+    }
+
+    env = DiepIOEnvBasic(env_config)
+
     obs, _ = env.reset()
-    print(obs[0].shape, env.observation_space[0].shape)
+    print(obs["agent_0"].shape, env.observation_space.shape)
     print(env.action_space)
     while True:
-        # obs, rewards, dones, _, _ = env.step({i: [0] * 6 for i in range(env.n_tanks)})
-        obs, rewards, dones, _, _ = env.step({
-            0: env._get_player_input(),
-            1: ([np.random.randint(3), np.random.randint(3), 1, 0], [0.0, 0.0])
+        obs, rewards, dones, truncations, infos = env.step({
+            "agent_0": env._get_player_input(),
+            "agent_1": ([np.random.randint(3), np.random.randint(3), 1, 0], [0.0, 0.0])
         })
-        # if rewards[0] != 0 or rewards[1] != 0:
-        #     print(rewards)
-        # obs, rewards, dones, _, _ = env.step()
-        # print(obs[0][0].shape, obs[0][1].shape, obs[0][2].shape, obs[0][3].shape)
-        if all(dones.values()):
+        if dones["__all__"]:
             break
     env.close()
