@@ -29,8 +29,8 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Observation space (per agent)
         self.observation_space = spaces.Dict({
-            "i":spaces.Box(low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8), # image
-            "s": spaces.Box(                                                                              # stats
+            "i": spaces.Box(low=0, high=255, shape=(cfg.SCREEN_SIZE, cfg.SCREEN_SIZE, 3), dtype=np.uint8), # image
+            "s": spaces.Box(                                                                               # stats
                 low=np.array([0, 1, 0] + [0] * 8),
                 high=np.array([1, 45, 33] + [7] * 8),
                 dtype=np.float32
@@ -720,7 +720,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         observations = {}
         truncations = {agent: False for agent in self._agent_ids}
 
-        assert(len(actions) == 2)
+        assert(len(actions) == self.n_tanks)
 
         # Process actions for each agent
         for agent, action in actions.items():
@@ -850,12 +850,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self.screen.fill("#eeeeee")
 
         # Render only agent 0's perspective
-        if self.tanks[0].alive:
-            surface = self._get_frame(0, for_render=True)
-            self.screen.blit(surface, (0, 0))
+        # if self.tanks[0].alive:
+        surface = self._get_frame(0, for_render=True)
+        self.screen.blit(surface, (0, 0))
 
         pygame.display.flip()
-        self.clock.tick(cfg.FPS)
+        if self.render_mode == "human":
+            self.clock.tick(cfg.FPS)
 
     def close(self):
         if self.render_mode:

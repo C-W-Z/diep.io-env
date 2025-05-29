@@ -4,7 +4,7 @@ from gymnasium import Env, Wrapper, spaces
 from collections import deque
 
 class DiepIO_CNN_Wrapper(Wrapper):
-    def __init__(self, env: Env, resize_shape=(128, 128), frame_stack_size=4, skip_frames=4):
+    def __init__(self, env: Env, resize_shape=(100, 100), frame_stack_size=4, skip_frames=4):
         super().__init__(env)
         self.resize_shape = resize_shape
         self.frame_stack_size = frame_stack_size
@@ -35,6 +35,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
         self.stats_high = np.array([1, 45, 33] + [7] * 8)
 
         self.possible_agents = self.env.possible_agents
+        self.agents = self.env.agents
 
         # Buffers for each agent
         self.frame_buffers = {agent: deque(maxlen=frame_stack_size) for agent in self.env._agent_ids}
@@ -42,6 +43,8 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
     def _process_image(self, frame):
         frame = cv2.resize(frame, self.resize_shape, interpolation=cv2.INTER_AREA)  # Keep RGB
+        # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # cv2.imwrite("test.jpg", np.transpose(frame, (1, 0, 2)))
         frame = frame.astype(np.float32) / 255.0  # Normalize to [0, 1]
         return frame
 
@@ -52,6 +55,8 @@ class DiepIO_CNN_Wrapper(Wrapper):
     def observation(self, observations):
         processed_obs = {}
         for agent, obs in observations.items():
+            assert len(obs.keys()) == 2, f"obs[{agent}] keys: {obs.keys()}"
+
             # Process image
             frame = self._process_image(obs["i"])
             self.frame_buffers[agent].append(frame)

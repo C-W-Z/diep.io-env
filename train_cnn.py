@@ -38,18 +38,18 @@ class ReplayBuffer:
         self.reward_sum = 0.0
         self.reward_square_sum = 0.0
 
-        self.image = torch.zeros((capacity,) + image_shape, dtype=torch.float32, device=device)
-        self.stats = torch.zeros((capacity,) + stats_shape, dtype=torch.float32, device=device)
-        self.action_d = torch.zeros((capacity, action_dim_d), dtype=torch.int64, device=device)
-        self.action_c = torch.zeros((capacity, action_dim_c), dtype=torch.float32, device=device)
-        self.rewards = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
-        self.next_image = torch.zeros((capacity,) + image_shape, dtype=torch.float32, device=device)
-        self.next_stats = torch.zeros((capacity,) + stats_shape, dtype=torch.float32, device=device)
-        self.dones = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
-        self.values = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
-        self.log_probs = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
-        self.returns = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
-        self.advantages = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
+        self.image = torch.zeros((capacity,) + image_shape, dtype=torch.float16, device=device)
+        self.stats = torch.zeros((capacity,) + stats_shape, dtype=torch.float16, device=device)
+        self.action_d = torch.zeros((capacity, action_dim_d), dtype=torch.int8, device=device)
+        self.action_c = torch.zeros((capacity, action_dim_c), dtype=torch.float16, device=device)
+        self.rewards = torch.zeros((capacity, 1), dtype=torch.float16, device=device)
+        self.next_image = torch.zeros((capacity,) + image_shape, dtype=torch.float16, device=device)
+        self.next_stats = torch.zeros((capacity,) + stats_shape, dtype=torch.float16, device=device)
+        self.dones = torch.zeros((capacity, 1), dtype=torch.float16, device=device)
+        self.values = torch.zeros((capacity, 1), dtype=torch.float16, device=device)
+        self.log_probs = torch.zeros((capacity, 1), dtype=torch.float16, device=device)
+        self.returns = torch.zeros((capacity, 1), dtype=torch.float16, device=device)
+        self.advantages = torch.zeros((capacity, 1), dtype=torch.float16, device=device)
 
     def push(
         self,
@@ -74,16 +74,16 @@ class ReplayBuffer:
         var = max(self.reward_square_sum / self.count - mean ** 2, 1e-4)
         normalized_reward = (reward - mean) / np.sqrt(var)
 
-        self.image[idx] = torch.tensor(image, dtype=torch.float32, device=self.device)
-        self.stats[idx] = torch.tensor(stats, dtype=torch.float32, device=self.device)
-        self.action_d[idx] = torch.tensor(action_d, dtype=torch.int64, device=self.device)
-        self.action_c[idx] = torch.tensor(action_c, dtype=torch.float32, device=self.device)
-        self.rewards[idx] = torch.tensor([[normalized_reward]], dtype=torch.float32, device=self.device)
-        self.next_image[idx] = torch.tensor(next_image, dtype=torch.float32, device=self.device)
-        self.next_stats[idx] = torch.tensor(next_stats, dtype=torch.float32, device=self.device)
-        self.dones[idx] = torch.tensor([[done]], dtype=torch.float32, device=self.device)
-        self.values[idx] = torch.tensor([[value]], dtype=torch.float32, device=self.device)
-        self.log_probs[idx] = torch.tensor([[log_prob]], dtype=torch.float32, device=self.device)
+        self.image[idx] = torch.tensor(image, dtype=torch.float16, device=self.device)
+        self.stats[idx] = torch.tensor(stats, dtype=torch.float16, device=self.device)
+        self.action_d[idx] = torch.tensor(action_d, dtype=torch.int8, device=self.device)
+        self.action_c[idx] = torch.tensor(action_c, dtype=torch.float16, device=self.device)
+        self.rewards[idx] = torch.tensor([[normalized_reward]], dtype=torch.float16, device=self.device)
+        self.next_image[idx] = torch.tensor(next_image, dtype=torch.float16, device=self.device)
+        self.next_stats[idx] = torch.tensor(next_stats, dtype=torch.float16, device=self.device)
+        self.dones[idx] = torch.tensor([[done]], dtype=torch.float16, device=self.device)
+        self.values[idx] = torch.tensor([[value]], dtype=torch.float16, device=self.device)
+        self.log_probs[idx] = torch.tensor([[log_prob]], dtype=torch.float16, device=self.device)
 
         self.size = min(self.size + 1, self.capacity)
 
@@ -178,10 +178,10 @@ class ReplayBuffer:
 ###########################################
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, input_channel: int, stats_dim: int, device):
+    def __init__(self, image_shape: int, stats_dim: int, device):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(input_channel, 32, kernel_size=8, stride=4),
+            nn.Conv2d(image_shape[2], 32, kernel_size=8, stride=4),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
@@ -190,7 +190,7 @@ class FeatureExtractor(nn.Module):
             nn.Flatten(),
         )
         with torch.no_grad():
-            dummy_input = torch.zeros(1, 4, 128, 128)
+            dummy_input = torch.zeros(1, image_shape[2], image_shape[0], image_shape[1])
             cnn_output = self.cnn(dummy_input)
             self.cnn_output_size = cnn_output.shape[1]
 
@@ -256,12 +256,12 @@ class Critic(nn.Module):
 ###########################################
 
 class PPOPolicy(nn.Module):
-    def __init__(self, cnn_input_channel, stats_dim, action_dim_d, action_dim_c, learning_rate=2.5e-4, clip_range=0.2, value_coeff=0.5,
+    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, learning_rate=2.5e-4, clip_range=0.2, value_coeff=0.5,
                  entropy_coeff=0.01, initial_std=0.1, max_grad_norm=0.5):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.feature_extractor = FeatureExtractor(cnn_input_channel, stats_dim, self.device)
-        self.actor = Actor(self.feature_extractor, action_dim_d, action_dim_c, self.device)
+        self.feature_extractor = FeatureExtractor(image_shape, stats_dim, self.device)
+        self.actor = Actor(self.feature_extractor, action_space_d, action_dim_c, self.device)
         self.critic = Critic(self.feature_extractor, self.device)
         self.log_std = nn.Parameter(torch.ones(action_dim_c) * torch.log(torch.tensor(initial_std)))
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
@@ -269,19 +269,17 @@ class PPOPolicy(nn.Module):
         self.value_coeff = value_coeff
         self.entropy_coeff = entropy_coeff
         self.max_grad_norm = max_grad_norm
+        self.discrete_splits = [3, 3, 2, 9]  # For splitting logits into [3, 3, 2, 9]
         self.to(self.device)
 
     def forward(self, image, stats):
         discrete_logits, continuous_mean = self.actor(image, stats)
-        value = self.critic(image, stats)
-        discrete_dists = [
-            Categorical(logits=discrete_logits[:, 0:3]),
-            Categorical(logits=discrete_logits[:, 3:6]),
-            Categorical(logits=discrete_logits[:, 6:8]),
-            Categorical(logits=discrete_logits[:, 8:]),
-        ]
+        # Split logits into 4 groups for MultiDiscrete
+        split_logits = torch.split(discrete_logits, self.discrete_splits, dim=-1)
+        discrete_dists = [Categorical(logits=logits) for logits in split_logits]
         std = torch.exp(self.log_std).clamp(1e-6, 50.0)
         continuous_dist = Normal(continuous_mean, std)
+        value = self.critic(image, stats)
         return discrete_dists, continuous_dist, value
 
     def get_action(self, image, stats):
@@ -289,7 +287,7 @@ class PPOPolicy(nn.Module):
         stats = torch.tensor(stats, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
             discrete_dists, continuous_dist, value = self.forward(image, stats)
-            discrete = torch.stack([dist.sample() for dist in discrete_dists], dim=-1)
+            discrete = torch.stack([dist.sample() for dist in discrete_dists], dim=-1) # Shape (1, 4)
             continuous = continuous_dist.sample()
             log_prob = sum(dist.log_prob(discrete[:, i]) for i, dist in enumerate(discrete_dists))
             log_prob += continuous_dist.log_prob(continuous).sum(dim=-1)
@@ -300,13 +298,13 @@ class PPOPolicy(nn.Module):
         image = torch.tensor(image, dtype=torch.float32).unsqueeze(0).to(self.device)
         stats = torch.tensor(stats, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            _, _, value = self.forward(image, stats)
+            value = self.critic(image, stats)
         return value.item()
 
     def update(self, batch):
         image_batch = batch['image'].to(self.device)
         stats_batch = batch['stats'].to(self.device)
-        action_batch = {'d': batch['action_d'].to(self.device), 'c': batch['action_c'].to(self.device)}
+        action_batch = {'d': batch['action_d'].to(self.device), 'c': batch['action_c'].to(self.device)} # (batch_size, 4)
         log_prob_batch = batch['log_probs'].to(self.device)
         advantage_batch = batch['advantages'].to(self.device)
         return_batch = batch['returns'].to(self.device)
@@ -314,7 +312,10 @@ class PPOPolicy(nn.Module):
         advantage_batch = (advantage_batch - advantage_batch.mean()) / (advantage_batch.std() + 1e-8)
 
         discrete_dists, continuous_dist, value = self.forward(image_batch, stats_batch)
-        new_log_prob = sum(dist.log_prob(action_batch['d'][:, i]) for i, dist in enumerate(discrete_dists))
+
+        # Compute log probs using the stored integer actions
+        new_log_prob = torch.zeros_like(log_prob_batch)
+        new_log_prob = sum(dist.log_prob(action_batch['d'][:, i]).unsqueeze(-1) for i, dist in enumerate(discrete_dists))
         new_log_prob += continuous_dist.log_prob(action_batch['c']).sum(dim=-1, keepdim=True)
         entropy = sum(dist.entropy().mean() for dist in discrete_dists) + continuous_dist.entropy().mean()
 
@@ -389,11 +390,16 @@ def learn(policy, buffer, num_epochs, batch_size, writer, episode_count, timeste
 # Training Function
 ###########################################
 
+def print_gpu_memory():
+    if torch.cuda.is_available():
+        print(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
+        print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
+
 def train_ppo(
     n_tanks,
     num_episodes_per_update=10,
-    max_buffer_steps=10000,
-    batch_size=64,
+    max_buffer_size=10000,
+    batch_size=32,
     total_timesteps=500000,
     gamma=0.99,
     gae_lam=0.95,
@@ -412,10 +418,9 @@ def train_ppo(
     # Initialize environment
     env_config = {
         "n_tanks": n_tanks,
-        "render_mode": False,
+        "render_mode": True,
         "max_steps": 1000000,
-        "unlimited_obs": False,
-        "resize_shape": (128, 128),
+        "resize_shape": (100, 100),
         "frame_stack_size": 4,
         "skip_frames": 4
     }
@@ -427,7 +432,8 @@ def train_ppo(
     )
     image_shape = env.observation_space["i"].shape # (128, 128, 12)
     stats_shape = env.observation_space["s"].shape # (11, 4)
-    action_dim_d = env.action_space["d"].nvec.sum()  # MultiDiscrete([3, 3, 2, 9]) -> 17 logits
+    action_space_d = env.action_space["d"].nvec.sum()  # MultiDiscrete([3, 3, 2, 9]) -> 17 logits
+    action_dim_d = env.action_space["d"].shape[0]  # MultiDiscrete([3, 3, 2, 9]) -> 4 dim
     action_dim_c = env.action_space["c"].shape[0]   # Box(-1, 1, (2,))
 
     # Initialize TensorBoard
@@ -442,11 +448,12 @@ def train_ppo(
     print(f"Logging to TensorBoard at {log_dir}")
 
     # Initialize buffer and policy
-    buffer = ReplayBuffer(max_buffer_steps, image_shape, stats_shape, action_dim_d, action_dim_c, device)
+    buffer = ReplayBuffer(max_buffer_size, image_shape, stats_shape, action_dim_d, action_dim_c, device)
+    print_gpu_memory()
     policy = PPOPolicy(
-        cnn_input_channel=image_shape[2],
+        image_shape=image_shape,
         stats_dim=stats_shape[0] * stats_shape[1],
-        action_dim_d=action_dim_d,
+        action_space_d=action_space_d,
         action_dim_c=action_dim_c,
         learning_rate=learning_rate,
         clip_range=clip_range,
@@ -469,13 +476,14 @@ def train_ppo(
 
     while timestep < total_timesteps:
         obs, _ = env.reset()
-        episode_reward = {agent: 0.0 for agent in env.possible_agents}
-        dones = {agent: False for agent in env.possible_agents}
+        episode_reward = {agent: 0.0 for agent in env.agents}
+        dones = {agent: False for agent in env.agents}
+        dones["__all__"] = False
         episode_steps = 0
 
-        while not all(dones.values()) and timestep < total_timesteps:
+        while not dones["__all__"] and timestep < total_timesteps:
             actions = {}
-            for agent in env.possible_agents:
+            for agent in env.agents:
                 if dones[agent]:
                     continue
                 image = obs[agent]["i"]
@@ -486,7 +494,7 @@ def train_ppo(
 
             next_obs, rewards, dones, truncations, _ = env.step(actions)
 
-            for agent in env.possible_agents:
+            for agent, n_obs in next_obs.items():
                 if dones[agent]:
                     continue
                 reward = rewards.get(agent, 0.0)
@@ -495,11 +503,11 @@ def train_ppo(
                 buffer.push(
                     image=obs[agent]["i"],
                     stats=obs[agent]["s"],
-                    action_d=action["d"],
-                    action_c=action["c"],
+                    action_d=actions[agent]["d"],
+                    action_c=actions[agent]["c"],
                     reward=reward,
-                    next_image=next_obs[agent]["i"],
-                    next_stats=next_obs[agent]["s"],
+                    next_image=n_obs["i"],
+                    next_stats=n_obs["s"],
                     done=1.0 if dones[agent] else 0.0,
                     value=value,
                     log_prob=log_prob
@@ -509,10 +517,12 @@ def train_ppo(
             episode_steps += env.skip_frames
             timestep += env.skip_frames
 
-            if any(dones.values()) or episode_steps >= env.max_steps:
+            if dones["__all__"]:
                 break
 
         episode_count += 1
+        print("timestep:", timestep)
+        print("episode_reward:", episode_reward)
         episode_rewards.append(sum(episode_reward.values()))
 
         # Process trajectory
@@ -580,13 +590,13 @@ if __name__ == "__main__":
     )
 
     # Phase 2: Multi-Agent Training
-    print("Starting multi-agent training (n_tanks=2)...")
-    train_ppo(
-        n_tanks=2,
-        total_timesteps=500000,
-        checkpoint_dir=checkpoint_dir,
-        checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
-        phase="multi-agent"
-    )
+    # print("Starting multi-agent training (n_tanks=2)...")
+    # train_ppo(
+    #     n_tanks=2,
+    #     total_timesteps=500000,
+    #     checkpoint_dir=checkpoint_dir,
+    #     checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
+    #     phase="multi-agent"
+    # )
 
-    print("Training complete.")
+    # print("Training complete.")
