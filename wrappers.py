@@ -15,19 +15,25 @@ class DiepIO_CNN_Wrapper(Wrapper):
         self.observation_space = spaces.Dict({
             "i": spaces.Box(    # image
                 low=0,
-                high=255,
+                high=1,
                 shape=(resize_shape[0], resize_shape[1], frame_stack_size),
-                dtype=np.uint8
+                dtype=np.float32
             ),
             "s": spaces.Box(    # stats
-                low=np.repeat([[0, 1, 0] + [0] * 8], [frame_stack_size], axis=0).T,
-                high=np.repeat([[1, 45, 33] + [7] * 8], [frame_stack_size], axis=0).T,
+                low=0,
+                high=1,
+                shape=(11, frame_stack_size),
                 dtype=np.float32
             )  # HP/maxHP, Level, skill points, 8 stats
         })
         self.observation_spaces = {
             agent: self.observation_space for agent in self.env._agent_ids
         }
+
+        # Stats normalization bounds
+        self.stats_low = np.array([0, 1, 0] + [0] * 8)
+        self.stats_high = np.array([1, 45, 33] + [7] * 8)
+
         self.possible_agents = self.env.possible_agents
 
         # Buffers for each agent
@@ -35,10 +41,14 @@ class DiepIO_CNN_Wrapper(Wrapper):
         self.stats_buffers = {agent: deque(maxlen=frame_stack_size) for agent in self.env._agent_ids}
 
     def _process_image(self, frame):
-        # Process image: grayscale and resize
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         frame = cv2.resize(frame, self.resize_shape, interpolation=cv2.INTER_AREA)[:, :, np.newaxis]
-        return frame.astype(np.uint8)
+        frame = frame.astype(np.float32) / 255.0  # Normalize to [0, 1]
+        return frame
+
+    def _process_stats(self, stats):
+        normalized_stats = (stats - self.stats_low) / (self.stats_high - self.stats_low)
+        return normalized_stats.astype(np.float32)[:, np.newaxis]
 
     def observation(self, observations):
         processed_obs = {}
@@ -48,14 +58,8 @@ class DiepIO_CNN_Wrapper(Wrapper):
             self.frame_buffers[agent].append(frame)
 
             # Process stats
-            stats = obs["s"][:, np.newaxis]
+            stats = self._process_stats(obs["s"])
             self.stats_buffers[agent].append(stats)
-
-            # Pad buffers with zeros if needed
-            # while len(self.frame_buffers[agent]) < self.frame_stack_size:
-            #     self.frame_buffers[agent].appendleft(np.zeros_like(frame))
-            # while len(self.stats_buffers[agent]) < self.frame_stack_size:
-            #     self.stats_buffers[agent].appendleft(np.zeros_like(stats))
 
             # Stack frames and stats
             stacked_frame = np.concatenate(self.frame_buffers[agent], axis=-1)
@@ -76,7 +80,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
             self.stats_buffers[agent].clear()
             # Initialize buffers with first frame and stats
             frame = self._process_image(obs[agent]["i"])
-            stats = obs[agent]["s"][:, np.newaxis]
+            stats = self._process_stats(obs[agent]["s"])
             for _ in range(self.frame_stack_size):
                 self.frame_buffers[agent].append(frame)
                 self.stats_buffers[agent].append(stats)
@@ -86,10 +90,10 @@ class DiepIO_CNN_Wrapper(Wrapper):
         return obs, info
 
     def step(self, actions):
-        total_rewards = {agent: 0.0 for agent in self.env._agent_ids}
-        dones = {agent: False for agent in self.env._agent_ids}
-        truncations = {agent: False for agent in self.env._agent_ids}
-        infos = {agent: {} for agent in self.env._agent_ids}
+        total_rewards    = {agent: 0.0 for agent in self.env._agent_ids}
+        dones            = {agent: False for agent in self.env._agent_ids}
+        truncations      = {agent: False for agent in self.env._agent_ids}
+        infos            = {agent: {} for agent in self.env._agent_ids}
         dones["__all__"] = False
 
         for f in range(self.skip_frames):
@@ -130,7 +134,7 @@ if __name__ == "__main__":
 
     obs, _ = env.reset()
     print(env.observation_space)
-    print(env.action_space)
+    print(env.action_space["d"].nvec.sum(), env.action_space["c"].shape)
     for i in range(2):
         for key in obs[f"agent_{i}"].keys():
             check_obs_in_space(obs[f"agent_{i}"][key], env.observation_spaces[f"agent_{i}"][key])
