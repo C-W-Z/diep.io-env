@@ -147,7 +147,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         header_height   = header_padding + line_spacing * 2 + header_padding
 
         # 2. prepare skill list & panel dimensions
-        skills          = [
+        skills = [
             ("Health Regen", (0, 255, 0)),
             ("Max Health", (128, 0, 128)),
             ("Body Damage", (255, 0, 255)),
@@ -229,7 +229,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
     def _get_frame(self, agent_id, for_render=False):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
         surface = pygame.Surface((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
-        surface.fill((255, 255, 255))  # White background
+        surface.fill("#eeeeee")  # White background
 
         # Center on the agent
         agent = self.tanks[agent_id]
@@ -334,7 +334,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             # pygame.draw.circle(surface, (127, 127, 127), (pixel_x, pixel_y), int(unit.radius * grid_size))
 
             if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
-                color = (216, 216, 216)
+                color = (255, 255, 255)
 
             # Draw polygon
             pygame.draw.polygon(surface, color, vertices)
@@ -344,10 +344,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
             #     continue
 
             if unit.hp < unit.max_hp:
-                hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)
+                half_unit_size = grid_size * unit.radius
+                pygame.draw.rect(
+                    surface, (0, 0, 0),
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+                )
                 pygame.draw.rect(
                     surface, (0, 216, 0),
-                    (pixel_x - grid_size * unit.radius, pixel_y + grid_size * unit.radius, hp_width, 5)
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, cfg.SCREEN_SIZE / 200)
                 )
 
         # Draw all tanks
@@ -382,7 +386,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             # Draw body
             color = (0, 127, 255) if unit.id == 0 else (255, 0, 0)
             if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
-                color = (216, 216, 216)
+                color = (255, 255, 255)
             pygame.draw.circle(
                 surface, color,
                 (pixel_x, pixel_y),
@@ -390,10 +394,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
             )
             # Draw HP bar
             if unit.hp < unit.max_hp:
-                hp_width = int(grid_size * 2 * unit.radius * unit.hp / unit.max_hp)
+                half_unit_size = grid_size * unit.radius
+                pygame.draw.rect(
+                    surface, (0, 0, 0),
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+                )
                 pygame.draw.rect(
                     surface, (0, 216, 0),
-                    (pixel_x - grid_size * unit.radius, pixel_y + grid_size * unit.radius, hp_width, 5)
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, cfg.SCREEN_SIZE / 200)
                 )
 
         for bullet in self.bullets:
@@ -406,15 +414,19 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
                 color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
                 if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
-                    color = (216, 216, 216)
+                    color = (255, 255, 255)
                 pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
                 # Draw HP bar
                 if for_render and bullet.hp < bullet.max_hp:
-                    hp_width = int(grid_size * 2 * bullet.radius * bullet.hp / bullet.max_hp)  # Scale with grid
+                    half_unit_size = grid_size * bullet.radius
+                    pygame.draw.rect(
+                        surface, (0, 0, 0),
+                        (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+                    )
                     pygame.draw.rect(
                         surface, (0, 216, 0),
-                        (pixel_x - grid_size * bullet.radius, pixel_y + grid_size * bullet.radius, hp_width, 5)
+                        (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, cfg.SCREEN_SIZE / 200)
                     )
 
         if for_render:
@@ -835,7 +847,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-        self.screen.fill((255, 255, 255))
+        self.screen.fill("#eeeeee")
 
         # Render only agent 0's perspective
         if self.tanks[0].alive:
