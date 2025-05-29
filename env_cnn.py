@@ -22,6 +22,8 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self.n_polygons = int(np.floor(self.n_tanks * cfg.N_POLYGON_SCALE))
         self.render_mode = env_config.get("render_mode", False)
         self.max_steps = env_config.get("max_steps", 1000000)
+        self.skip_frames = env_config.get("skip_frames", 1)
+        self.skip_frames_counter = 0
 
         # Agent IDs
         self._agent_ids = [f"agent_{i}" for i in range(self.n_tanks)]
@@ -55,7 +57,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # Initialize rendering
         if self.render_mode:
             pygame.init()
-            self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
+            self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE * self.n_tanks, cfg.SCREEN_SIZE))
             self.clock = pygame.time.Clock()
 
         self.reset()
@@ -142,10 +144,10 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         # 1. prepare fonts and dynamic header sizes
-        font = pygame.font.Font(None, 24)
-        line_spacing    = font.get_linesize()   # height of one text line
-        header_padding  = 5                     # top & bottom padding inside header
-        header_height   = header_padding + line_spacing * 2 + header_padding
+        font = pygame.font.Font(None, 24 * cfg.SCREEN_SIZE // 800)
+        line_spacing    = font.get_linesize()    # height of one text line
+        header_padding  = 5 * cfg.SCREEN_SIZE / 800 # top & bottom padding inside header
+        header_height   = header_padding + line_spacing * 2 + header_padding * cfg.SCREEN_SIZE / 800
 
         # 2. prepare skill list & panel dimensions
         skills = [
@@ -158,13 +160,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
             ("Reload", (0, 255, 255)),
             ("Movement Speed", (255, 0, 0)),
         ]
-        line_height     = 25    # vertical spacing per skill entry
-        progress_bar_h  = 20
-        bottom_padding  = 10
-        panel_width     = 250
+        line_height     = 25  * cfg.SCREEN_SIZE / 800  # vertical spacing per skill entry
+        progress_bar_h  = 20  * cfg.SCREEN_SIZE / 800
+        bottom_padding  = 10  * cfg.SCREEN_SIZE / 800
+        panel_width     = 250 * cfg.SCREEN_SIZE / 800
 
         # compute full panel height
-        panel_height = header_height + len(skills) * line_height + progress_bar_h + bottom_padding
+        panel_height = header_height + len(skills) * cfg.SCREEN_SIZE / 800 * line_height + progress_bar_h + bottom_padding
 
         # if panel would go off-screen, shift it up
         screen_h = cfg.SCREEN_SIZE
@@ -178,9 +180,9 @@ class DiepIOEnvBasic(MultiAgentEnv):
         )
 
         # 4. draw progress bar background
-        bar_x = offset_x + 10
+        bar_x = offset_x + 10 * cfg.SCREEN_SIZE / 800
         bar_y = offset_y + panel_height - progress_bar_h - bottom_padding
-        bar_w = panel_width - 20
+        bar_w = panel_width - 20 * cfg.SCREEN_SIZE / 800
         pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_w, progress_bar_h))
 
         # compute progress based on current level range
@@ -204,11 +206,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # 5. render header text at top
         # Skill Points
         sp_surf = font.render(f"Skill Points: {tank.skill_points}", True, (255,255,255))
-        screen.blit(sp_surf, (offset_x + 10, offset_y + header_padding))
+        screen.blit(sp_surf, (offset_x + 10 * cfg.SCREEN_SIZE / 800, offset_y + header_padding))
         # Score & Level
         lvl_y   = offset_y + header_padding + line_spacing
         lvl_surf = font.render(f"Score: {tank.score}  Level: {tank.level} Tank", True, (255,255,255))
-        screen.blit(lvl_surf, (offset_x + 10, lvl_y))
+        screen.blit(lvl_surf, (offset_x + 10 * cfg.SCREEN_SIZE / 800, lvl_y))
 
         # 6. render each skill entry
         self.skill_buttons.clear()
@@ -216,14 +218,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
             y = offset_y + header_height + i * line_height
             level = tank.stats[TST(i)]
             text_surf = font.render(f"{skill_name}: {level}", True, (255,255,255))
-            screen.blit(text_surf, (offset_x + 10, y))
+            screen.blit(text_surf, (offset_x + 10 * cfg.SCREEN_SIZE / 800, y))
 
             # draw plus button
-            btn = pygame.Rect(offset_x + 200, y - 5, 30, 20)
+            btn = pygame.Rect(offset_x + 200 * cfg.SCREEN_SIZE / 800, y - 5 * cfg.SCREEN_SIZE / 800, 30 * cfg.SCREEN_SIZE / 800, 20 * cfg.MAP_SIZE / 800)
             btn_color = (0,200,0) if tank.skill_points > 0 else (150,150,150)
             pygame.draw.rect(screen, btn_color, btn)
             plus_surf = font.render("+", True, (0,0,0))
-            screen.blit(plus_surf, (btn.x + 8, btn.y + 2))
+            screen.blit(plus_surf, (btn.x + 8 * cfg.SCREEN_SIZE / 800, btn.y + 2))
 
             self.skill_buttons.append((btn, i))
 
@@ -297,13 +299,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
             # Determine color and side length based on polygon side count
             n_sides = int(round(unit.side))
             if n_sides == 3:  # Triangle (red)
-                color = (255, 0, 0)
+                color = "#ff4000"
                 radius = cfg.POLYGON_RADIUS[3] * grid_size # Scale radius to screen
             elif n_sides == 4:  # Square (yellow)
-                color = (255, 255, 0)
+                color = "#ffff00"
                 radius = cfg.POLYGON_RADIUS[4] * grid_size
             elif n_sides == 5:  # Pentagon (dark blue)
-                color = (0, 0, 139)
+                color = "#5010aa"
                 radius = cfg.POLYGON_RADIUS[5] * grid_size
             else:
                 continue  # Skip invalid polygons
@@ -385,7 +387,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             )
 
             # Draw body
-            color = (0, 127, 255) if unit.id == 0 else (255, 0, 0)
+            color = (0, 127, 255) if unit.id == agent_id else (255, 0, 0)
             if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                 color = (255, 255, 255)
             pygame.draw.circle(
@@ -413,7 +415,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             pixel_x = int(screen_half + rel_x * grid_size)
             pixel_y = int(screen_half + rel_y * grid_size)
             if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
-                color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == 0 else (255, 0, 0)
+                color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == agent_id else (255, 0, 0)
                 # color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
                 if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                     color = (255, 255, 255)
@@ -434,7 +436,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         if for_render:
             # Render skill panel for agent 0
             self.skill_buttons = []  # Clear previous buttons
-            self._render_skill_panel(self.tanks[0], surface, 10, cfg.SCREEN_SIZE - 260)  # Left-bottom position
+            self._render_skill_panel(self.tanks[agent_id], surface, 10 * cfg.SCREEN_SIZE / 800, cfg.SCREEN_SIZE - 260 * cfg.SCREEN_SIZE / 800)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
@@ -862,16 +864,25 @@ class DiepIOEnvBasic(MultiAgentEnv):
     def render(self):
         if not self.render_mode:
             return
+
+        self.skip_frames_counter += 1
+        if self.skip_frames_counter == self.skip_frames:
+            self.skip_frames_counter = 0
+        else:
+            return
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
         self.screen.fill("#eeeeee")
 
-        # Render only agent 0's perspective
-        # if self.tanks[0].alive:
-        surface = self._get_frame(0, for_render=True)
-        self.screen.blit(surface, (0, 0))
+        for i in range(self.n_tanks):
+            # Render only agent 0's perspective
+            # if self.tanks[0].alive:
+            surface = self._get_frame(i, for_render=True)
+            # self.screen.blit(surface, (0, 0))
+            self.screen.blit(surface, (cfg.SCREEN_SIZE * i, 0))
 
         pygame.display.flip()
         if self.render_mode == "human":

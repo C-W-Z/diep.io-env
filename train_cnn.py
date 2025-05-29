@@ -261,7 +261,7 @@ class Critic(nn.Module):
 ###########################################
 
 class PPOPolicy(nn.Module):
-    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, lr=5e-4, clip_range=0.2, value_coeff=0.5,
+    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, lr=1e-4, clip_range=0.2, value_coeff=0.5,
                  entropy_coeff=0.01, initial_std=0.1, max_grad_norm=0.5):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -269,7 +269,7 @@ class PPOPolicy(nn.Module):
         self.actor = Actor(self.feature_extractor, action_space_d, action_dim_c, self.device)
         self.critic = Critic(self.feature_extractor, self.device)
         self.log_std = nn.Parameter(torch.ones(action_dim_c) * torch.log(torch.tensor(initial_std)))
-        self.optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=lr * 10)
+        self.optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=1e-5)
         self.clip_range = clip_range
         self.value_coeff = value_coeff
         self.entropy_coeff = entropy_coeff
@@ -359,7 +359,7 @@ def save_checkpoint(policy, buffers, episode_count, mean_rewards, timestep, log_
     torch.save(checkpoint, checkpoint_path)
     print(f"\nCheckpoint saved at {checkpoint_path}\n")
 
-def load_checkpoint(policy, buffers, checkpoint_path):
+def load_checkpoint(policy, buffers, checkpoint_path, lr=1e-4):
     if not os.path.exists(checkpoint_path):
         return None, None, None, 0
     checkpoint = torch.load(checkpoint_path, weights_only=False)
@@ -369,7 +369,7 @@ def load_checkpoint(policy, buffers, checkpoint_path):
         policy.actor.load_state_dict(checkpoint['actor_state_dict'])
         policy.critic.load_state_dict(checkpoint['critic_state_dict'])
         policy.log_std = checkpoint['log_std']
-        policy.optimizer = optim.AdamW(policy.parameters(), lr=5e-5, weight_decay=5e-4)
+        policy.optimizer = optim.AdamW(policy.parameters(), lr=lr, weight_decay=1e-5)
         policy.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     if buffers is not None:
         for agent, buffer in buffers.items():
@@ -416,19 +416,18 @@ def print_gpu_memory():
 def train_ppo(
     n_tanks,
     max_buffer_size=10000,
-    batch_size=32,
+    batch_size=64,
     total_timesteps=500000,
     gamma=0.99,
     gae_lambda=0.95,
     num_epochs=10,
-    lr=2.5e-4,
+    lr=1e-4,
     clip_range=0.2,
     value_coeff=0.5,
     entropy_coeff=0.01,
     max_grad_norm=0.5,
     initial_std=0.1,
-    save_interval=100000,
-    update_interval_steps=100,  # New: Update every 100 steps
+    save_interval=10,
     checkpoint_path=None,
     checkpoint_dir="checkpoints",
     phase="single-agent"
@@ -437,7 +436,7 @@ def train_ppo(
     env_config = {
         "n_tanks": n_tanks,
         "render_mode": True,  # Disable rendering to save memory
-        "max_steps": 50000,
+        "max_steps": max_buffer_size // n_tanks * 4,
         "resize_shape": (100, 100),
         "frame_stack_size": 4,
         "skip_frames": 4
@@ -456,7 +455,7 @@ def train_ppo(
 
     # Initialize TensorBoard
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    episode_count, mean_rewards, log_dir, timestep = load_checkpoint(None, None, checkpoint_path if checkpoint_path else os.path.join(checkpoint_dir, f"{phase}_checkpoint.pt"))
+    episode_count, mean_rewards, log_dir, timestep = load_checkpoint(None, None, checkpoint_path if checkpoint_path else os.path.join(checkpoint_dir, f"{phase}_checkpoint.pt"), lr=lr)
     if log_dir is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         log_dir = os.path.join("Log", f"run_{timestamp}_{phase}")
@@ -483,15 +482,13 @@ def train_ppo(
 
     # Load checkpoint
     if checkpoint_path and os.path.exists(checkpoint_path):
-        episode_count, mean_rewards, _, timestep = load_checkpoint(policy, buffers, checkpoint_path)
+        episode_count, mean_rewards, _, timestep = load_checkpoint(policy, buffers, checkpoint_path, lr=lr)
         print(f"Resumed training from {checkpoint_path} at episode {episode_count}, timestep {timestep}")
 
     # Training data
-    episode_rewards = []
     mean_rewards = mean_rewards if mean_rewards else []
     timestep = timestep if timestep else 0
     episode_count = episode_count if episode_count else 0
-    last_update_timestep = 0
 
     while timestep < total_timesteps:
         obs, _ = env.reset()
@@ -533,42 +530,41 @@ def train_ppo(
                 )
 
             obs = next_obs
-            episode_steps += env.skip_frames
-            timestep += env.skip_frames
-
-            # Update policy every update_interval_steps
-            if timestep - last_update_timestep >= update_interval_steps:
-                # Process trajectories for each agent
-                for agent in env.agents:
-                    if not dones[agent]:
-                        last_value = policy.get_values(obs[agent]["i"], obs[agent]["s"])
-                    else:
-                        last_value = 0.0
-                    buffers[agent].process_trajectory(
-                        gamma=gamma,
-                        gae_lambda=gae_lambda,
-                        last_value=last_value,
-                        is_last_terminal=dones[agent]
-                    )
-
-                episode_rewards.append(sum(episode_reward.values()))
-
-                # Learn using experiences from all agents
-                approx_kl, std = learn(policy, buffers, num_epochs, batch_size, writer, episode_count, timestep)
-                mean_reward = np.mean(episode_rewards[-10:] if episode_rewards else [0])
-                writer.add_scalar("misc/ep_reward_mean", mean_reward, timestep)
-                print(f"Timestep {timestep} | Episode {episode_count} | Reward {episode_rewards[-1]:.2f} | KL {approx_kl:.4f} | STD {std:.4f}")
-
-                # Clear buffers
-                last_update_timestep = timestep
+            episode_steps += 1
+            timestep += 1
 
             if dones["__all__"]:
                 break
 
         episode_count += 1
 
+        # Process trajectories for each agent
+        for agent in env.agents:
+            if not dones[agent]:
+                last_value = policy.get_values(obs[agent]["i"], obs[agent]["s"])
+            else:
+                last_value = 0.0
+            buffers[agent].process_trajectory(
+                gamma=gamma,
+                gae_lambda=gae_lambda,
+                last_value=last_value,
+                is_last_terminal=dones[agent]
+            )
+
+        # Learn using experiences from all agents
+        approx_kl, std = learn(policy, buffers, num_epochs, batch_size, writer, episode_count, timestep)
+        reward_str = ""
+        for agent, reward in episode_reward.items():
+            reward_str += f" Reward {agent}: {reward:.2f}"
+            writer.add_scalar(f"misc/ep_reward_{agent}", reward, episode_count)
+        print(f"Timestep {episode_steps} | Episode {episode_count} |" + reward_str + f" | KL {approx_kl:.4f} | STD {std:.4f}")
+
+        # Clear buffers
+        for buffer in buffers.values():
+            buffer.clear()
+
         # Save checkpoint
-        if timestep // save_interval > (timestep - episode_steps) // save_interval:
+        if episode_count % save_interval == 0:
             checkpoint_path_phase = os.path.join(checkpoint_dir, f"{phase}_checkpoint.pt")
             save_checkpoint(
                 policy, buffers, episode_count, mean_rewards, timestep, log_dir, checkpoint_path_phase
