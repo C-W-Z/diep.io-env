@@ -6,3 +6,4 @@ _*.py
 *.png
 *.gif
 *Log*
+*checkpoints*
