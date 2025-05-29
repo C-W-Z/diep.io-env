@@ -178,10 +178,10 @@ class ReplayBuffer:
 ###########################################
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, device):
+    def __init__(self, input_channel: int, stats_dim: int, device):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(4, 32, kernel_size=8, stride=4),
+            nn.Conv2d(input_channel, 32, kernel_size=8, stride=4),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
@@ -195,7 +195,7 @@ class FeatureExtractor(nn.Module):
             self.cnn_output_size = cnn_output.shape[1]
 
         self.stats_fc = nn.Sequential(
-            nn.Linear(11 * 4, 128),
+            nn.Linear(stats_dim, 128),
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
@@ -256,11 +256,11 @@ class Critic(nn.Module):
 ###########################################
 
 class PPOPolicy(nn.Module):
-    def __init__(self, action_dim_d, action_dim_c, learning_rate=2.5e-4, clip_range=0.2, value_coeff=0.5,
+    def __init__(self, cnn_input_channel, stats_dim, action_dim_d, action_dim_c, learning_rate=2.5e-4, clip_range=0.2, value_coeff=0.5,
                  entropy_coeff=0.01, initial_std=0.1, max_grad_norm=0.5):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.feature_extractor = FeatureExtractor(self.device)
+        self.feature_extractor = FeatureExtractor(cnn_input_channel, stats_dim, self.device)
         self.actor = Actor(self.feature_extractor, action_dim_d, action_dim_c, self.device)
         self.critic = Critic(self.feature_extractor, self.device)
         self.log_std = nn.Parameter(torch.ones(action_dim_c) * torch.log(torch.tensor(initial_std)))
@@ -338,21 +338,6 @@ class PPOPolicy(nn.Module):
 # Utility Functions
 ###########################################
 
-def save_random_state():
-    return {
-        'python': random.getstate(),
-        'numpy': np.random.get_state(),
-        'torch': torch.get_rng_state(),
-        'cuda': torch.cuda.get_rng_state() if torch.cuda.is_available() else None
-    }
-
-def load_random_state(state):
-    random.setstate(state['python'])
-    np.random.set_state(state['numpy'])
-    torch.set_rng_state(state['torch'])
-    if state['cuda'] is not None and torch.cuda.is_available():
-        torch.cuda.set_rng_state(state['cuda'])
-
 def save_checkpoint(policy, buffer, episode_count, mean_rewards, timestep, log_dir, checkpoint_path):
     checkpoint = {
         'actor_state_dict': policy.actor.state_dict(),
@@ -364,7 +349,6 @@ def save_checkpoint(policy, buffer, episode_count, mean_rewards, timestep, log_d
         'episode_count': episode_count,
         'mean_rewards': mean_rewards,
         'timestep': timestep,
-        'random_state': save_random_state(),
         'log_dir': log_dir
     }
     torch.save(checkpoint, checkpoint_path)
@@ -385,7 +369,6 @@ def load_checkpoint(policy, buffer, checkpoint_path):
     if buffer is not None:
         buffer.load_state_dict(checkpoint['buffer'])
 
-    load_random_state(checkpoint['random_state'])
     log_dir = checkpoint.get('log_dir', 'Log')
     return checkpoint['episode_count'], checkpoint['mean_rewards'], log_dir, checkpoint['timestep']
 
@@ -442,10 +425,10 @@ def train_ppo(
         frame_stack_size=env_config["frame_stack_size"],
         skip_frames=env_config["skip_frames"]
     )
-    image_shape = (128, 128, 4)
-    stats_shape = (11, 4)
-    action_dim_d = 17  # MultiDiscrete([3, 3, 2, 9]) -> 17 logits
-    action_dim_c = 2   # Box(-1, 1, (2,))
+    image_shape = env.observation_space["i"].shape # (128, 128, 12)
+    stats_shape = env.observation_space["s"].shape # (11, 4)
+    action_dim_d = env.action_space["d"].nvec.sum()  # MultiDiscrete([3, 3, 2, 9]) -> 17 logits
+    action_dim_c = env.action_space["c"].shape[0]   # Box(-1, 1, (2,))
 
     # Initialize TensorBoard
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -461,6 +444,8 @@ def train_ppo(
     # Initialize buffer and policy
     buffer = ReplayBuffer(max_buffer_steps, image_shape, stats_shape, action_dim_d, action_dim_c, device)
     policy = PPOPolicy(
+        cnn_input_channel=image_shape[2],
+        stats_dim=stats_shape[0] * stats_shape[1],
         action_dim_d=action_dim_d,
         action_dim_c=action_dim_c,
         learning_rate=learning_rate,

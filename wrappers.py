@@ -4,7 +4,7 @@ from gymnasium import Env, Wrapper, spaces
 from collections import deque
 
 class DiepIO_CNN_Wrapper(Wrapper):
-    def __init__(self, env: Env, resize_shape=(128, 128), frame_stack_size=4, skip_frames=4):
+    def __init__(self, env: Env, resize_shape=(20, 128), frame_stack_size=4, skip_frames=4):
         super().__init__(env)
         self.resize_shape = resize_shape
         self.frame_stack_size = frame_stack_size
@@ -16,7 +16,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
             "i": spaces.Box(    # image
                 low=0,
                 high=1,
-                shape=(resize_shape[0], resize_shape[1], frame_stack_size),
+                shape=(resize_shape[0], resize_shape[1], 3 * frame_stack_size),
                 dtype=np.float32
             ),
             "s": spaces.Box(    # stats
@@ -41,8 +41,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
         self.stats_buffers = {agent: deque(maxlen=frame_stack_size) for agent in self.env._agent_ids}
 
     def _process_image(self, frame):
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        frame = cv2.resize(frame, self.resize_shape, interpolation=cv2.INTER_AREA)[:, :, np.newaxis]
+        frame = cv2.resize(frame, self.resize_shape, interpolation=cv2.INTER_AREA)  # Keep RGB
         frame = frame.astype(np.float32) / 255.0  # Normalize to [0, 1]
         return frame
 
