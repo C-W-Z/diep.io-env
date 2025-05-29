@@ -602,7 +602,7 @@ if __name__ == "__main__":
         n_tanks=1,
         total_timesteps=500000,
         checkpoint_dir=checkpoint_dir,
-        checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
+        # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
         phase="single-agent"
     )
 

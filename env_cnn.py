@@ -834,12 +834,12 @@ class DiepIOEnvBasic(MultiAgentEnv):
         for agent in self._agent_ids:
             agent_idx = int(agent.split("_")[1])
             tank = self.tanks[agent_idx]
-            self._rewards[agent] += tank.score - self.prev_tanks_score[agent_idx]
+            self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
             self.prev_tanks_score[agent_idx] = tank.score
             if not self._dones[agent] and (not tank.alive or self.no_reward_frames[agent_idx] > 30 * cfg.FPS):
                 tank.hp = 0
                 tank.calc_respawn_score()
-                self._rewards[agent] -= 100
+                self._rewards[agent] -= 10
                 self._dones[agent] = True
                 self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
             elif self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
