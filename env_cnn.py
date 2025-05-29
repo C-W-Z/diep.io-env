@@ -143,11 +143,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
         return {"i": image, "s": stats} # image, stats
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
+        scale = cfg.SCREEN_SIZE / 800
+
         # 1. prepare fonts and dynamic header sizes
-        font = pygame.font.Font(None, 24 * cfg.SCREEN_SIZE // 800)
+        font = pygame.font.Font(None, int(24 * scale))
         line_spacing    = font.get_linesize()    # height of one text line
-        header_padding  = 5 * cfg.SCREEN_SIZE / 800 # top & bottom padding inside header
-        header_height   = header_padding + line_spacing * 2 + header_padding * cfg.SCREEN_SIZE / 800
+        header_padding  = 5 * scale # top & bottom padding inside header
+        header_height   = header_padding + line_spacing * 2 + header_padding * scale
 
         # 2. prepare skill list & panel dimensions
         skills = [
@@ -160,13 +162,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
             ("Reload", (0, 255, 255)),
             ("Movement Speed", (255, 0, 0)),
         ]
-        line_height     = 25  * cfg.SCREEN_SIZE / 800  # vertical spacing per skill entry
-        progress_bar_h  = 20  * cfg.SCREEN_SIZE / 800
-        bottom_padding  = 10  * cfg.SCREEN_SIZE / 800
-        panel_width     = 250 * cfg.SCREEN_SIZE / 800
+        line_height     = 25  * scale  # vertical spacing per skill entry
+        progress_bar_h  = 20  * scale
+        bottom_padding  = 10  * scale
+        panel_width     = 250 * scale
 
         # compute full panel height
-        panel_height = header_height + len(skills) * cfg.SCREEN_SIZE / 800 * line_height + progress_bar_h + bottom_padding
+        panel_height = header_height + len(skills) * line_height + progress_bar_h + bottom_padding
 
         # if panel would go off-screen, shift it up
         screen_h = cfg.SCREEN_SIZE
@@ -180,9 +182,9 @@ class DiepIOEnvBasic(MultiAgentEnv):
         )
 
         # 4. draw progress bar background
-        bar_x = offset_x + 10 * cfg.SCREEN_SIZE / 800
+        bar_x = offset_x + 10 * scale
         bar_y = offset_y + panel_height - progress_bar_h - bottom_padding
-        bar_w = panel_width - 20 * cfg.SCREEN_SIZE / 800
+        bar_w = panel_width - 20 * scale
         pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_w, progress_bar_h))
 
         # compute progress based on current level range
@@ -206,11 +208,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # 5. render header text at top
         # Skill Points
         sp_surf = font.render(f"Skill Points: {tank.skill_points}", True, (255,255,255))
-        screen.blit(sp_surf, (offset_x + 10 * cfg.SCREEN_SIZE / 800, offset_y + header_padding))
+        screen.blit(sp_surf, (offset_x + 10 * scale, offset_y + header_padding))
         # Score & Level
         lvl_y   = offset_y + header_padding + line_spacing
         lvl_surf = font.render(f"Score: {tank.score}  Level: {tank.level} Tank", True, (255,255,255))
-        screen.blit(lvl_surf, (offset_x + 10 * cfg.SCREEN_SIZE / 800, lvl_y))
+        screen.blit(lvl_surf, (offset_x + 10 * scale, lvl_y))
 
         # 6. render each skill entry
         self.skill_buttons.clear()
@@ -218,14 +220,14 @@ class DiepIOEnvBasic(MultiAgentEnv):
             y = offset_y + header_height + i * line_height
             level = tank.stats[TST(i)]
             text_surf = font.render(f"{skill_name}: {level}", True, (255,255,255))
-            screen.blit(text_surf, (offset_x + 10 * cfg.SCREEN_SIZE / 800, y))
+            screen.blit(text_surf, (offset_x + 10 * scale, y))
 
             # draw plus button
-            btn = pygame.Rect(offset_x + 200 * cfg.SCREEN_SIZE / 800, y - 5 * cfg.SCREEN_SIZE / 800, 30 * cfg.SCREEN_SIZE / 800, 20 * cfg.MAP_SIZE / 800)
+            btn = pygame.Rect(offset_x + 200 * scale, y - 5 * scale, 30 * scale, 20 * cfg.MAP_SIZE / 800)
             btn_color = (0,200,0) if tank.skill_points > 0 else (150,150,150)
             pygame.draw.rect(screen, btn_color, btn)
             plus_surf = font.render("+", True, (0,0,0))
-            screen.blit(plus_surf, (btn.x + 8 * cfg.SCREEN_SIZE / 800, btn.y + 2))
+            screen.blit(plus_surf, (btn.x + 8 * scale, btn.y + 2))
 
             self.skill_buttons.append((btn, i))
 
@@ -436,7 +438,8 @@ class DiepIOEnvBasic(MultiAgentEnv):
         if for_render:
             # Render skill panel for agent 0
             self.skill_buttons = []  # Clear previous buttons
-            self._render_skill_panel(self.tanks[agent_id], surface, 10 * cfg.SCREEN_SIZE / 800, cfg.SCREEN_SIZE - 260 * cfg.SCREEN_SIZE / 800)  # Left-bottom position
+            scale = cfg.SCREEN_SIZE / 800
+            self._render_skill_panel(self.tanks[agent_id], surface, 10 * scale, cfg.SCREEN_SIZE - 260 * scale)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
@@ -576,9 +579,9 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
-                    self.rewards[self._agent_ids[bullet.tank.id]] += 1
+                    self._rewards[self._agent_ids[bullet.tank.id]] += 1
                     if thing.type == UnitType.Tank:
-                        self.rewards[self._agent_ids[thing.id]] -= 1
+                        self._rewards[self._agent_ids[thing.id]] -= 1
 
                 max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
                 # print(max_v)
@@ -675,7 +678,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             poly.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
-            self.rewards[self._agent_ids[tank.id]] += 1
+            self._rewards[self._agent_ids[tank.id]] += 1
 
             if tank.last_collider_id == poly.id:
                 tank.same_collider_counter += 1
@@ -725,7 +728,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
     ]:
         self.step_count += 1
-        self.rewards = {agent: 0.0 for agent in self._agent_ids}
+        self._rewards = {agent: 0.0 for agent in self._agent_ids}
         observations = {}
         truncations = {agent: False for agent in self._agent_ids}
 
@@ -736,7 +739,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             agent_idx = int(agent.split("_")[1])
             tank = self.tanks[agent_idx]
             if not tank.alive or self._dones[agent]:
-                self.rewards[agent] = 0.0
+                self._rewards[agent] = 0.0
                 continue
 
             tank.regen_health()
@@ -752,7 +755,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 dx > 0 and tank.x >= cfg.MAP_SIZE - tank.radius - 1e-6 or
                 dy < 0 and tank.y <= tank.radius + 1e-6 or
                 dy > 0 and tank.y >= cfg.MAP_SIZE - tank.radius - 1e-6):
-                self.rewards[agent] -= 0.01
+                self._rewards[agent] -= 0.01
 
             old_x, old_y = tank.x, tank.y
 
@@ -831,16 +834,17 @@ class DiepIOEnvBasic(MultiAgentEnv):
         for agent in self._agent_ids:
             agent_idx = int(agent.split("_")[1])
             tank = self.tanks[agent_idx]
-            self.rewards[agent] += tank.score - self.prev_tanks_score[agent_idx]
+            self._rewards[agent] += tank.score - self.prev_tanks_score[agent_idx]
             self.prev_tanks_score[agent_idx] = tank.score
-            if not tank.alive or self.no_reward_frames[agent_idx] > 30 * cfg.FPS:
+            if not self._dones[agent] and (not tank.alive or self.no_reward_frames[agent_idx] > 30 * cfg.FPS):
                 tank.hp = 0
                 tank.calc_respawn_score()
+                self._rewards[agent] -= 100
                 self._dones[agent] = True
                 self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
             elif self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
-                self.rewards[agent] -= 0.01
-            if self.rewards[agent] > 0:
+                self._rewards[agent] -= 0.01
+            if self._rewards[agent] > 0:
                 self.no_reward_frames[agent_idx] = 0
             else:
                 self.no_reward_frames[agent_idx] += 1
@@ -859,7 +863,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         if self.render_mode:
             self.render()
 
-        return observations, self.rewards, self._dones, truncations, self._infos
+        return observations, self._rewards, self._dones, truncations, self._infos
 
     def render(self):
         if not self.render_mode:

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 class Config:
     # Constants
     FPS                             = 60
-    SCREEN_SIZE                     = 800      # Pixel size of render window
+    SCREEN_SIZE                     = 400      # Pixel size of render window
     MAP_SIZE                        = 80
     BORDER_SIZE                     = 0
     MAP_GRID                        = 32        # Size of collision grid

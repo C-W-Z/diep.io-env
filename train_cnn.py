@@ -64,21 +64,22 @@ class ReplayBuffer:
         value: float,
         log_prob: float,
     ):
-        idx = self.count % self.capacity
+        # idx = self.count % self.capacity
+        idx = self.size % self.capacity
 
         # Update reward normalization
-        self.count += 1
-        self.reward_sum += reward
-        self.reward_square_sum += reward ** 2
-        mean = self.reward_sum / self.count
-        var = max(self.reward_square_sum / self.count - mean ** 2, 1e-4)
-        normalized_reward = (reward - mean) / np.sqrt(var)
+        # self.count += 1
+        # self.reward_sum += reward
+        # self.reward_square_sum += reward ** 2
+        # mean = self.reward_sum / self.count
+        # var = max(self.reward_square_sum / self.count - mean ** 2, 1e-4)
+        # normalized_reward = (reward - mean) / np.sqrt(var)
 
         self.image[idx] = torch.tensor(image, dtype=torch.float16, device=self.device)
         self.stats[idx] = torch.tensor(stats, dtype=torch.float16, device=self.device)
         self.action_d[idx] = torch.tensor(action_d, dtype=torch.int8, device=self.device)
         self.action_c[idx] = torch.tensor(action_c, dtype=torch.float16, device=self.device)
-        self.rewards[idx] = torch.tensor([[normalized_reward]], dtype=torch.float16, device=self.device)
+        self.rewards[idx] = torch.tensor([[reward]], dtype=torch.float16, device=self.device)
         self.next_image[idx] = torch.tensor(next_image, dtype=torch.float16, device=self.device)
         self.next_stats[idx] = torch.tensor(next_stats, dtype=torch.float16, device=self.device)
         self.dones[idx] = torch.tensor([[done]], dtype=torch.float16, device=self.device)
@@ -360,7 +361,7 @@ def save_checkpoint(policy, buffers, episode_count, mean_rewards, timestep, log_
     print(f"\nCheckpoint saved at {checkpoint_path}\n")
 
 def load_checkpoint(policy, buffers, checkpoint_path, lr=1e-4):
-    if not os.path.exists(checkpoint_path):
+    if not checkpoint_path or not os.path.exists(checkpoint_path):
         return None, None, None, 0
     checkpoint = torch.load(checkpoint_path, weights_only=False)
 
@@ -380,21 +381,21 @@ def load_checkpoint(policy, buffers, checkpoint_path, lr=1e-4):
     return checkpoint['episode_count'], checkpoint['mean_rewards'], log_dir, checkpoint['timestep']
 
 def learn(policy: PPOPolicy, buffers: dict[str, ReplayBuffer], num_epochs, batch_size: int, writer, episode_count, timestep):
-    all_batches = []
-    for agent, buffer in buffers.items():
-        batch = buffer.sample(batch_size // len(buffers))  # Split batch size across agents
-        if batch is not None:
-            all_batches.append(batch)
-
-    if not all_batches:
-        return 0.0, 0.0  # No data to learn from
-
-    # Concatenate batches from all agents
-    combined_batch = {}
-    for key in all_batches[0].keys():
-        combined_batch[key] = torch.cat([batch[key] for batch in all_batches], dim=0)
-
     for _ in range(num_epochs):
+        all_batches = []
+        for buffer in buffers.values():
+            batch = buffer.sample(batch_size)  # Split batch size across agents
+            if batch is not None:
+                all_batches.append(batch)
+
+        if not all_batches:
+            return 0.0, 0.0  # No data to learn from
+
+        # Concatenate batches from all agents
+        combined_batch = {}
+        for key in all_batches[0].keys():
+            combined_batch[key] = torch.cat([batch[key] for batch in all_batches], dim=0)
+
         pi_loss, v_loss, total_loss, approx_kl, std = policy.update(combined_batch)
         writer.add_scalar("train/pi_loss", pi_loss, timestep)
         writer.add_scalar("train/v_loss", v_loss, timestep)
@@ -416,7 +417,7 @@ def print_gpu_memory():
 def train_ppo(
     n_tanks,
     max_buffer_size=10000,
-    batch_size=64,
+    batch_size=32,          # per agent
     total_timesteps=500000,
     gamma=0.99,
     gae_lambda=0.95,
@@ -424,9 +425,9 @@ def train_ppo(
     lr=1e-4,
     clip_range=0.2,
     value_coeff=0.5,
-    entropy_coeff=0.01,
+    entropy_coeff=0.05,
     max_grad_norm=0.5,
-    initial_std=0.1,
+    initial_std=1.0,
     save_interval=10,
     checkpoint_path=None,
     checkpoint_dir="checkpoints",
@@ -435,8 +436,8 @@ def train_ppo(
     # Initialize environment
     env_config = {
         "n_tanks": n_tanks,
-        "render_mode": True,  # Disable rendering to save memory
-        "max_steps": max_buffer_size // n_tanks * 4,
+        "render_mode": False,  # Disable rendering to save memory
+        "max_steps": 4 * max_buffer_size // n_tanks,
         "resize_shape": (100, 100),
         "frame_stack_size": 4,
         "skip_frames": 4
@@ -455,7 +456,7 @@ def train_ppo(
 
     # Initialize TensorBoard
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    episode_count, mean_rewards, log_dir, timestep = load_checkpoint(None, None, checkpoint_path if checkpoint_path else os.path.join(checkpoint_dir, f"{phase}_checkpoint.pt"), lr=lr)
+    episode_count, mean_rewards, log_dir, timestep = load_checkpoint(None, None, checkpoint_path, lr=lr)
     if log_dir is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         log_dir = os.path.join("Log", f"run_{timestamp}_{phase}")
@@ -511,8 +512,8 @@ def train_ppo(
             next_obs, rewards, dones, truncations, _ = env.step(actions)
 
             for agent, n_obs in next_obs.items():
-                if dones[agent]:
-                    continue
+                # if dones[agent]:
+                #     continue
                 reward = rewards.get(agent, 0.0)
                 episode_reward[agent] += reward
 
@@ -596,22 +597,23 @@ if __name__ == "__main__":
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     # Phase 1: Single-Agent Training
-    # print("Starting single-agent training (n_tanks=1)...")
-    # train_ppo(
-    #     n_tanks=1,
-    #     total_timesteps=500000,
-    #     checkpoint_dir=checkpoint_dir,
-    #     phase="single-agent"
-    # )
-
-    # Phase 2: Multi-Agent Training
-    print("Starting multi-agent training (n_tanks=2)...")
+    print("Starting single-agent training (n_tanks=1)...")
     train_ppo(
-        n_tanks=2,
+        n_tanks=1,
         total_timesteps=500000,
         checkpoint_dir=checkpoint_dir,
-        # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
-        phase="multi-agent"
+        checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
+        phase="single-agent"
     )
 
-    # print("Training complete.")
+    # Phase 2: Multi-Agent Training
+    # print("Starting multi-agent training (n_tanks=2)...")
+    # train_ppo(
+    #     n_tanks=2,
+    #     total_timesteps=500000,
+    #     checkpoint_dir=checkpoint_dir,
+    #     # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
+    #     phase="multi-agent"
+    # )
+
+    print("Training complete.")
