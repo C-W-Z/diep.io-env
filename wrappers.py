@@ -4,7 +4,7 @@ from gymnasium import Env, Wrapper, spaces
 from collections import deque
 
 class DiepIO_CNN_Wrapper(Wrapper):
-    def __init__(self, env: Env, resize_shape=(20, 128), frame_stack_size=4, skip_frames=4):
+    def __init__(self, env: Env, resize_shape=(128, 128), frame_stack_size=4, skip_frames=4):
         super().__init__(env)
         self.resize_shape = resize_shape
         self.frame_stack_size = frame_stack_size
