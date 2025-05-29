@@ -261,7 +261,7 @@ class Critic(nn.Module):
 ###########################################
 
 class PPOPolicy(nn.Module):
-    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, lr=2.5e-4, clip_range=0.2, value_coeff=0.5,
+    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, lr=5e-4, clip_range=0.2, value_coeff=0.5,
                  entropy_coeff=0.01, initial_std=0.1, max_grad_norm=0.5):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -269,7 +269,7 @@ class PPOPolicy(nn.Module):
         self.actor = Actor(self.feature_extractor, action_space_d, action_dim_c, self.device)
         self.critic = Critic(self.feature_extractor, self.device)
         self.log_std = nn.Parameter(torch.ones(action_dim_c) * torch.log(torch.tensor(initial_std)))
-        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=lr * 10)
         self.clip_range = clip_range
         self.value_coeff = value_coeff
         self.entropy_coeff = entropy_coeff
@@ -369,7 +369,7 @@ def load_checkpoint(policy, buffers, checkpoint_path):
         policy.actor.load_state_dict(checkpoint['actor_state_dict'])
         policy.critic.load_state_dict(checkpoint['critic_state_dict'])
         policy.log_std = checkpoint['log_std']
-        policy.optimizer = optim.Adam(policy.parameters(), lr=2.5e-4)
+        policy.optimizer = optim.AdamW(policy.parameters(), lr=5e-5, weight_decay=5e-4)
         policy.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     if buffers is not None:
         for agent, buffer in buffers.items():
@@ -600,22 +600,22 @@ if __name__ == "__main__":
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     # Phase 1: Single-Agent Training
-    print("Starting single-agent training (n_tanks=1)...")
-    train_ppo(
-        n_tanks=1,
-        total_timesteps=500000,
-        checkpoint_dir=checkpoint_dir,
-        phase="single-agent"
-    )
-
-    # Phase 2: Multi-Agent Training
-    # print("Starting multi-agent training (n_tanks=2)...")
+    # print("Starting single-agent training (n_tanks=1)...")
     # train_ppo(
-    #     n_tanks=2,
+    #     n_tanks=1,
     #     total_timesteps=500000,
     #     checkpoint_dir=checkpoint_dir,
-    #     checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
-    #     phase="multi-agent"
+    #     phase="single-agent"
     # )
+
+    # Phase 2: Multi-Agent Training
+    print("Starting multi-agent training (n_tanks=2)...")
+    train_ppo(
+        n_tanks=2,
+        total_timesteps=500000,
+        checkpoint_dir=checkpoint_dir,
+        # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
+        phase="multi-agent"
+    )
 
     # print("Training complete.")
