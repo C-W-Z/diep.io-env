@@ -89,8 +89,9 @@ class ReplayBuffer:
 
     def process_trajectory(self, gamma: float, gae_lambda: float, last_value: float, is_last_terminal: bool):
         path_slice = slice(0, self.size)
-        values_t = self.values[path_slice].cpu().numpy()
-        rewards_t = self.rewards[path_slice].cpu().numpy()
+        # Convert to float32 for computation
+        values_t = self.values[path_slice].to(torch.float32).cpu().numpy()
+        rewards_t = self.rewards[path_slice].to(torch.float32).cpu().numpy()
 
         N = len(rewards_t)
         deltas = np.zeros(N, dtype=np.float32)
@@ -106,24 +107,28 @@ class ReplayBuffer:
             advantages[t] = deltas[t] + gamma * gae_lambda * next_non_terminal[t] * advantages[t+1]
 
         returns = advantages + values_t[:, 0]
-        self.returns[path_slice] = torch.tensor(returns[:, np.newaxis], device=self.device)
-        self.advantages[path_slice] = torch.tensor(advantages[:, np.newaxis], device=self.device)
+        self.returns[path_slice] = torch.tensor(returns[:, np.newaxis], dtype=torch.float16, device=self.device)
+        self.advantages[path_slice] = torch.tensor(advantages[:, np.newaxis], dtype=torch.float16, device=self.device)
 
     def sample(self, batch_size: int):
+        if self.size < batch_size:
+            print("no enough data", self.size, batch_size)
+            return None  # Not enough data to sample
         indices = torch.randint(0, self.size, (batch_size,), device=self.device)
+        # Cast to float32 for model compatibility
         return {
-            'image': self.image[indices],
-            'stats': self.stats[indices],
-            'action_d': self.action_d[indices],
-            'action_c': self.action_c[indices],
-            'rewards': self.rewards[indices],
-            'next_image': self.next_image[indices],
-            'next_stats': self.next_stats[indices],
-            'dones': self.dones[indices],
-            'values': self.values[indices],
-            'log_probs': self.log_probs[indices],
-            'returns': self.returns[indices],
-            'advantages': self.advantages[indices],
+            'image': self.image[indices].to(torch.float32),
+            'stats': self.stats[indices].to(torch.float32),
+            'action_d': self.action_d[indices],  # int8 is fine
+            'action_c': self.action_c[indices].to(torch.float32),
+            'rewards': self.rewards[indices].to(torch.float32),
+            'next_image': self.next_image[indices].to(torch.float32),
+            'next_stats': self.next_stats[indices].to(torch.float32),
+            'dones': self.dones[indices].to(torch.float32),
+            'values': self.values[indices].to(torch.float32),
+            'log_probs': self.log_probs[indices].to(torch.float32),
+            'returns': self.returns[indices].to(torch.float32),
+            'advantages': self.advantages[indices].to(torch.float32),
         }
 
     def clear(self):
@@ -178,7 +183,7 @@ class ReplayBuffer:
 ###########################################
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, image_shape: int, stats_dim: int, device):
+    def __init__(self, image_shape: tuple, stats_dim: int, device):
         super().__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(image_shape[2], 32, kernel_size=8, stride=4),
@@ -256,7 +261,7 @@ class Critic(nn.Module):
 ###########################################
 
 class PPOPolicy(nn.Module):
-    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, learning_rate=2.5e-4, clip_range=0.2, value_coeff=0.5,
+    def __init__(self, image_shape, stats_dim, action_space_d, action_dim_c, lr=2.5e-4, clip_range=0.2, value_coeff=0.5,
                  entropy_coeff=0.01, initial_std=0.1, max_grad_norm=0.5):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -264,7 +269,7 @@ class PPOPolicy(nn.Module):
         self.actor = Actor(self.feature_extractor, action_space_d, action_dim_c, self.device)
         self.critic = Critic(self.feature_extractor, self.device)
         self.log_std = nn.Parameter(torch.ones(action_dim_c) * torch.log(torch.tensor(initial_std)))
-        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.clip_range = clip_range
         self.value_coeff = value_coeff
         self.entropy_coeff = entropy_coeff
@@ -287,7 +292,7 @@ class PPOPolicy(nn.Module):
         stats = torch.tensor(stats, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
             discrete_dists, continuous_dist, value = self.forward(image, stats)
-            discrete = torch.stack([dist.sample() for dist in discrete_dists], dim=-1) # Shape (1, 4)
+            discrete = torch.stack([dist.sample() for dist in discrete_dists], dim=-1)  # Shape (1, 4)
             continuous = continuous_dist.sample()
             log_prob = sum(dist.log_prob(discrete[:, i]) for i, dist in enumerate(discrete_dists))
             log_prob += continuous_dist.log_prob(continuous).sum(dim=-1)
@@ -298,13 +303,13 @@ class PPOPolicy(nn.Module):
         image = torch.tensor(image, dtype=torch.float32).unsqueeze(0).to(self.device)
         stats = torch.tensor(stats, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            value = self.critic(image, stats)
+            _, _, value = self.forward(image, stats)
         return value.item()
 
     def update(self, batch):
         image_batch = batch['image'].to(self.device)
         stats_batch = batch['stats'].to(self.device)
-        action_batch = {'d': batch['action_d'].to(self.device), 'c': batch['action_c'].to(self.device)} # (batch_size, 4)
+        action_batch = {'d': batch['action_d'].to(self.device), 'c': batch['action_c'].to(self.device)}
         log_prob_batch = batch['log_probs'].to(self.device)
         advantage_batch = batch['advantages'].to(self.device)
         return_batch = batch['returns'].to(self.device)
@@ -312,10 +317,9 @@ class PPOPolicy(nn.Module):
         advantage_batch = (advantage_batch - advantage_batch.mean()) / (advantage_batch.std() + 1e-8)
 
         discrete_dists, continuous_dist, value = self.forward(image_batch, stats_batch)
-
-        # Compute log probs using the stored integer actions
         new_log_prob = torch.zeros_like(log_prob_batch)
-        new_log_prob = sum(dist.log_prob(action_batch['d'][:, i]).unsqueeze(-1) for i, dist in enumerate(discrete_dists))
+        for i, dist in enumerate(discrete_dists):
+            new_log_prob += dist.log_prob(action_batch['d'][:, i]).unsqueeze(-1)
         new_log_prob += continuous_dist.log_prob(action_batch['c']).sum(dim=-1, keepdim=True)
         entropy = sum(dist.entropy().mean() for dist in discrete_dists) + continuous_dist.entropy().mean()
 
@@ -339,14 +343,14 @@ class PPOPolicy(nn.Module):
 # Utility Functions
 ###########################################
 
-def save_checkpoint(policy, buffer, episode_count, mean_rewards, timestep, log_dir, checkpoint_path):
+def save_checkpoint(policy, buffers, episode_count, mean_rewards, timestep, log_dir, checkpoint_path):
     checkpoint = {
         'actor_state_dict': policy.actor.state_dict(),
         'critic_state_dict': policy.critic.state_dict(),
         'feature_extractor_state_dict': policy.feature_extractor.state_dict(),
         'log_std': policy.log_std,
         'optimizer_state_dict': policy.optimizer.state_dict(),
-        'buffer': buffer.state_dict(),
+        'buffers': {agent: buffer.state_dict() for agent, buffer in buffers.items()},
         'episode_count': episode_count,
         'mean_rewards': mean_rewards,
         'timestep': timestep,
@@ -355,7 +359,7 @@ def save_checkpoint(policy, buffer, episode_count, mean_rewards, timestep, log_d
     torch.save(checkpoint, checkpoint_path)
     print(f"\nCheckpoint saved at {checkpoint_path}\n")
 
-def load_checkpoint(policy, buffer, checkpoint_path):
+def load_checkpoint(policy, buffers, checkpoint_path):
     if not os.path.exists(checkpoint_path):
         return None, None, None, 0
     checkpoint = torch.load(checkpoint_path, weights_only=False)
@@ -367,17 +371,31 @@ def load_checkpoint(policy, buffer, checkpoint_path):
         policy.log_std = checkpoint['log_std']
         policy.optimizer = optim.Adam(policy.parameters(), lr=2.5e-4)
         policy.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    if buffer is not None:
-        buffer.load_state_dict(checkpoint['buffer'])
+    if buffers is not None:
+        for agent, buffer in buffers.items():
+            if agent in checkpoint['buffers']:
+                buffer.load_state_dict(checkpoint['buffers'][agent])
 
     log_dir = checkpoint.get('log_dir', 'Log')
     return checkpoint['episode_count'], checkpoint['mean_rewards'], log_dir, checkpoint['timestep']
 
-def learn(policy, buffer, num_epochs, batch_size, writer, episode_count, timestep):
-    for _ in range(num_epochs):
-        batch = buffer.sample(batch_size)
-        pi_loss, v_loss, total_loss, approx_kl, std = policy.update(batch)
+def learn(policy: PPOPolicy, buffers: dict[str, ReplayBuffer], num_epochs, batch_size: int, writer, episode_count, timestep):
+    all_batches = []
+    for agent, buffer in buffers.items():
+        batch = buffer.sample(batch_size // len(buffers))  # Split batch size across agents
+        if batch is not None:
+            all_batches.append(batch)
 
+    if not all_batches:
+        return 0.0, 0.0  # No data to learn from
+
+    # Concatenate batches from all agents
+    combined_batch = {}
+    for key in all_batches[0].keys():
+        combined_batch[key] = torch.cat([batch[key] for batch in all_batches], dim=0)
+
+    for _ in range(num_epochs):
+        pi_loss, v_loss, total_loss, approx_kl, std = policy.update(combined_batch)
         writer.add_scalar("train/pi_loss", pi_loss, timestep)
         writer.add_scalar("train/v_loss", v_loss, timestep)
         writer.add_scalar("train/total_loss", total_loss, timestep)
@@ -397,20 +415,20 @@ def print_gpu_memory():
 
 def train_ppo(
     n_tanks,
-    num_episodes_per_update=10,
     max_buffer_size=10000,
     batch_size=32,
     total_timesteps=500000,
     gamma=0.99,
-    gae_lam=0.95,
+    gae_lambda=0.95,
     num_epochs=10,
-    learning_rate=2.5e-4,
+    lr=2.5e-4,
     clip_range=0.2,
     value_coeff=0.5,
     entropy_coeff=0.01,
     max_grad_norm=0.5,
     initial_std=0.1,
     save_interval=100000,
+    update_interval_steps=100,  # New: Update every 100 steps
     checkpoint_path=None,
     checkpoint_dir="checkpoints",
     phase="single-agent"
@@ -418,8 +436,8 @@ def train_ppo(
     # Initialize environment
     env_config = {
         "n_tanks": n_tanks,
-        "render_mode": True,
-        "max_steps": 1000000,
+        "render_mode": True,  # Disable rendering to save memory
+        "max_steps": 50000,
         "resize_shape": (100, 100),
         "frame_stack_size": 4,
         "skip_frames": 4
@@ -430,11 +448,11 @@ def train_ppo(
         frame_stack_size=env_config["frame_stack_size"],
         skip_frames=env_config["skip_frames"]
     )
-    image_shape = env.observation_space["i"].shape # (128, 128, 12)
-    stats_shape = env.observation_space["s"].shape # (11, 4)
+    image_shape = env.observation_space["i"].shape  # (100, 100, 12)
+    stats_shape = env.observation_space["s"].shape  # (11, 4)
     action_space_d = env.action_space["d"].nvec.sum()  # MultiDiscrete([3, 3, 2, 9]) -> 17 logits
     action_dim_d = env.action_space["d"].shape[0]  # MultiDiscrete([3, 3, 2, 9]) -> 4 dim
-    action_dim_c = env.action_space["c"].shape[0]   # Box(-1, 1, (2,))
+    action_dim_c = env.action_space["c"].shape[0]  # Box(-1, 1, (2,))
 
     # Initialize TensorBoard
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -447,15 +465,15 @@ def train_ppo(
     writer = SummaryWriter(log_dir)
     print(f"Logging to TensorBoard at {log_dir}")
 
-    # Initialize buffer and policy
-    buffer = ReplayBuffer(max_buffer_size, image_shape, stats_shape, action_dim_d, action_dim_c, device)
+    # Initialize a ReplayBuffer for each agent
+    buffers = {agent: ReplayBuffer(max_buffer_size // n_tanks, image_shape, stats_shape, action_dim_d, action_dim_c, device) for agent in env.agents}
     print_gpu_memory()
     policy = PPOPolicy(
         image_shape=image_shape,
         stats_dim=stats_shape[0] * stats_shape[1],
         action_space_d=action_space_d,
         action_dim_c=action_dim_c,
-        learning_rate=learning_rate,
+        lr=lr,
         clip_range=clip_range,
         value_coeff=value_coeff,
         entropy_coeff=entropy_coeff,
@@ -465,7 +483,7 @@ def train_ppo(
 
     # Load checkpoint
     if checkpoint_path and os.path.exists(checkpoint_path):
-        episode_count, mean_rewards, _, timestep = load_checkpoint(policy, buffer, checkpoint_path)
+        episode_count, mean_rewards, _, timestep = load_checkpoint(policy, buffers, checkpoint_path)
         print(f"Resumed training from {checkpoint_path} at episode {episode_count}, timestep {timestep}")
 
     # Training data
@@ -473,6 +491,7 @@ def train_ppo(
     mean_rewards = mean_rewards if mean_rewards else []
     timestep = timestep if timestep else 0
     episode_count = episode_count if episode_count else 0
+    last_update_timestep = 0
 
     while timestep < total_timesteps:
         obs, _ = env.reset()
@@ -500,7 +519,7 @@ def train_ppo(
                 reward = rewards.get(agent, 0.0)
                 episode_reward[agent] += reward
 
-                buffer.push(
+                buffers[agent].push(
                     image=obs[agent]["i"],
                     stats=obs[agent]["s"],
                     action_d=actions[agent]["d"],
@@ -517,42 +536,42 @@ def train_ppo(
             episode_steps += env.skip_frames
             timestep += env.skip_frames
 
+            # Update policy every update_interval_steps
+            if timestep - last_update_timestep >= update_interval_steps:
+                # Process trajectories for each agent
+                for agent in env.agents:
+                    if not dones[agent]:
+                        last_value = policy.get_values(obs[agent]["i"], obs[agent]["s"])
+                    else:
+                        last_value = 0.0
+                    buffers[agent].process_trajectory(
+                        gamma=gamma,
+                        gae_lambda=gae_lambda,
+                        last_value=last_value,
+                        is_last_terminal=dones[agent]
+                    )
+
+                episode_rewards.append(sum(episode_reward.values()))
+
+                # Learn using experiences from all agents
+                approx_kl, std = learn(policy, buffers, num_epochs, batch_size, writer, episode_count, timestep)
+                mean_reward = np.mean(episode_rewards[-10:] if episode_rewards else [0])
+                writer.add_scalar("misc/ep_reward_mean", mean_reward, timestep)
+                print(f"Timestep {timestep} | Episode {episode_count} | Reward {episode_rewards[-1]:.2f} | KL {approx_kl:.4f} | STD {std:.4f}")
+
+                # Clear buffers
+                last_update_timestep = timestep
+
             if dones["__all__"]:
                 break
 
         episode_count += 1
-        print("timestep:", timestep)
-        print("episode_reward:", episode_reward)
-        episode_rewards.append(sum(episode_reward.values()))
-
-        # Process trajectory
-        last_values = {}
-        for agent in env.possible_agents:
-            if not dones[agent]:
-                last_values[agent] = policy.get_values(obs[agent]["i"], obs[agent]["s"])
-            else:
-                last_values[agent] = 0.0
-        buffer.process_trajectory(
-            gamma=gamma,
-            gae_lam=gae_lam,
-            last_value=max(last_values.values()),
-            is_last_terminal=any(dones.values())
-        )
-
-        # Update policy
-        if episode_count % num_episodes_per_update == 0:
-            approx_kl, std = learn(policy, buffer, num_epochs, batch_size, writer, episode_count, timestep)
-            mean_reward = np.mean(episode_rewards[-num_episodes_per_update:])
-            mean_rewards.append(mean_reward)
-            writer.add_scalar("misc/ep_reward_mean", mean_reward, timestep)
-            print(f"Timestep {timestep}/{total_timesteps} | Episode {episode_count} | Avg Reward {mean_reward:.2f} | KL {approx_kl:.4f} | STD {std:.4f}")
-            buffer.clear()
 
         # Save checkpoint
         if timestep // save_interval > (timestep - episode_steps) // save_interval:
             checkpoint_path_phase = os.path.join(checkpoint_dir, f"{phase}_checkpoint.pt")
             save_checkpoint(
-                policy, buffer, episode_count, mean_rewards, timestep, log_dir, checkpoint_path_phase
+                policy, buffers, episode_count, mean_rewards, timestep, log_dir, checkpoint_path_phase
             )
 
     # Plot reward curve
@@ -566,7 +585,7 @@ def train_ppo(
     # Save final checkpoint
     checkpoint_path_phase = os.path.join(checkpoint_dir, f"{phase}_checkpoint.pt")
     save_checkpoint(
-        policy, buffer, episode_count, mean_rewards, timestep, log_dir, checkpoint_path_phase
+        policy, buffers, episode_count, mean_rewards, timestep, log_dir, checkpoint_path_phase
     )
 
     writer.close()

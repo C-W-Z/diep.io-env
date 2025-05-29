@@ -6,7 +6,7 @@ class Config:
     FPS                             = 60
     SCREEN_SIZE                     = 800      # Pixel size of render window
     MAP_SIZE                        = 80
-    BORDER_SIZE                     = 5
+    BORDER_SIZE                     = 0
     MAP_GRID                        = 32        # Size of collision grid
     BASE_MAX_VELOCITY               = 10 / FPS  # 10 grids per second
     BASE_ACC_FRAMES                 = 10        # Acceleration

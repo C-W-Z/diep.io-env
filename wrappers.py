@@ -114,6 +114,10 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
             if step_dones["__all__"]:
                 dones["__all__"] = True
+                if f < self.skip_frames - 1:
+                    obs = {}
+                    for agent_idx, agent in enumerate(self.env._agent_ids):
+                        obs[agent] = self.env._get_obs(agent_idx)
                 break
 
         processed_obs = self.observation(obs)
