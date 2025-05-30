@@ -2,6 +2,8 @@ import numpy as np
 import cv2
 from gymnasium import Env, Wrapper, spaces
 from collections import deque
+from ray.rllib.env import MultiAgentEnv
+from typing import Any
 
 class DiepIO_CNN_Wrapper(Wrapper):
     def __init__(self, env: Env, resize_shape=(100, 100), frame_stack_size=4, skip_frames=4):
@@ -126,19 +128,21 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
         return processed_obs, total_rewards, dones, truncations, infos
 
-class DiepIO_FixedOBS_Wrapper(Wrapper):
-    def __init__(self, env: Env, frame_stack_size=4, skip_frames=4):
-        super().__init__(env)
+class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
+    def __init__(self, env_config: dict[str, Any] = {}):
+        from env_new import DiepIOEnvBasic
 
-        self.frame_stack_size = frame_stack_size
-        self.skip_frames = skip_frames  # Number of frames to skip (apply same action)
+        self.env = DiepIOEnvBasic(env_config)
+
+        self.frame_stack_size = env_config.get("frame_stack_size", 4)
+        self.skip_frames = env_config.get("skip_frames", 4)  # Number of frames to skip (apply same action)
 
         self.action_space = self.env.action_space
         self.action_spaces = self.env.action_spaces
         self.observation_space = spaces.Box(
             low=0,
             high=1,
-            shape=(env.observation_space.shape[0] * frame_stack_size, ),
+            shape=(self.env.observation_space.shape[0] * self.frame_stack_size, ),
             dtype=np.float32
         )
         self.observation_spaces = {
@@ -146,14 +150,14 @@ class DiepIO_FixedOBS_Wrapper(Wrapper):
         }
 
         # Stats normalization bounds
-        self.obs_low = env.observation_space.low
-        self.obs_scale = env.observation_space.high - env.observation_space.low
+        self.obs_low = self.env.observation_space.low
+        self.obs_scale = self.env.observation_space.high - self.env.observation_space.low
 
         self.possible_agents = self.env.possible_agents
         self.agents = self.env.agents
 
         # Buffers for each agent
-        self.frame_buffers = {agent: deque(maxlen=frame_stack_size) for agent in self.env._agent_ids}
+        self.frame_buffers = {agent: deque(maxlen=self.frame_stack_size) for agent in self.env._agent_ids}
 
     def observation(self, observations):
         processed_obs = {}
@@ -219,6 +223,10 @@ class DiepIO_FixedOBS_Wrapper(Wrapper):
 
         return processed_obs, total_rewards, dones, truncations, infos
 
+    def __getattr__(self, name):
+        # Delegate any undefined attributes to the base environment
+        return getattr(self.env, name)
+
 def test_cnn_wrapper():
     from env_cnn import DiepIOEnvBasic
     from utils import check_obs_in_space
@@ -254,18 +262,17 @@ def test_cnn_wrapper():
     env.close()
 
 def test_fixedobs_wrapper():
-    from env_new import DiepIOEnvBasic
     from utils import check_obs_in_space
 
     env_config = {
         "n_tanks": 2,
-        "render_mode": True,
+        "render_mode": False,
         "max_steps": 1000000,
-        "unlimited_obs": False
+        "frame_stack_size": 4,
+        "skip_frames": 4,
     }
 
-    env = DiepIOEnvBasic(env_config)
-    env = DiepIO_FixedOBS_Wrapper(env)
+    env = DiepIO_FixedOBS_Wrapper(env_config)
 
     print(env.observation_space)
     print(env.action_space["d"].nvec.sum(), env.action_space["c"].shape)

@@ -7,7 +7,7 @@ from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIO_FixedOBS_Wrapper(DiepIOEnvBasic(env_config))
+    return DiepIO_FixedOBS_Wrapper(env_config)
 
 register_env("diepio-v0", env_creator)
 
@@ -18,10 +18,19 @@ def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
 # Initialize Ray
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
+env_config = {
+    "n_tanks": 2,
+    "render_mode": False,
+    "max_steps": 1000000,
+    "frame_stack_size": 4,
+    "skip_frames": 4,
+}
+
 # Get observation and action spaces
-temp_env = env_creator({"n_tanks": 2})
+temp_env = env_creator(env_config)
 obs_space = temp_env.observation_space
 act_space = temp_env.action_space
+temp_env.close()
 
 print("Observation space:", obs_space)
 print("Action space:", act_space)
@@ -35,12 +44,7 @@ config = (
     )
     .environment(
         env="diepio-v0",
-        env_config={
-            "n_tanks": 2,
-            "render_mode": False,
-            "max_steps": 1000000,
-            "unlimited_obs": False,
-        }
+        env_config=env_config
     )
     .framework("torch")
     .resources(
