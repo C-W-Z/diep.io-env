@@ -446,6 +446,43 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
         # return obs_array
 
+    def _auto_shoot(self, agent: str):
+        tank: Tank = self.tanks[int(agent.split("_")[1])]
+        self_x, self_y = tank.x, tank.y
+
+        min_x = tank.x - tank.observation_size / 2
+        max_x = tank.x + tank.observation_size / 2
+        min_y = tank.y - tank.observation_size / 2
+        max_y = tank.y + tank.observation_size / 2
+
+        best_rx, best_ry = 0, 0
+        min_distance = tank.observation_size * 10
+
+        for unit in self.polygons:
+            if not (min_x <= unit.x <= max_x and min_y <= unit.y <= max_y):
+                continue
+            rx, ry = unit.x - self_x, unit.y - self_y
+            distance = np.hypot(rx, ry)
+            if distance != 0 and distance < min_distance:
+                best_rx, best_ry = rx / distance, ry / distance
+                min_distance = distance
+
+        for unit in self.tanks:
+            if unit.id == tank.id:
+                continue
+            if not (min_x <= unit.x <= max_x and min_y <= unit.y <= max_y):
+                continue
+            rx, ry = unit.x - self_x, unit.y - self_y
+            distance = np.hypot(rx, ry)
+            if distance != 0 and distance < min_distance:
+                best_rx, best_ry = rx / distance, ry / distance
+                min_distance = distance
+
+        if min_distance == tank.observation_size * 10:
+            return tank.rx, tank.ry, 0
+
+        return best_rx, -best_ry, 1
+
     def _get_player_input(self):
         dx, dy, shoot = 0, 0, 0
         keys = pygame.key.get_pressed()
@@ -917,8 +954,15 @@ if __name__ == "__main__":
             check_obs_in_space(obs[f"agent_{i}"][key], env.observation_spaces[f"agent_{i}"][key])
 
     while True:
+        action = env._get_player_input()
+
+        rx, ry, shoot = env._auto_shoot("agent_0")
+        action["d"][2] = shoot
+        action["c"] = [rx, ry]
+
+
         obs, rewards, dones, truncations, infos = env.step({
-            "agent_0": env._get_player_input(),
+            "agent_0": action,
             "agent_1": env._get_random_input(),
         })
         for i in range(2):

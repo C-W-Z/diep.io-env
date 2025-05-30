@@ -304,7 +304,7 @@ class PPOPolicy(nn.Module):
         image = torch.tensor(image, dtype=torch.float32).unsqueeze(0).to(self.device)
         stats = torch.tensor(stats, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            _, _, value = self.forward(image, stats)
+            value = self.critic(image, stats)
         return value.item()
 
     def update(self, batch):
@@ -418,11 +418,11 @@ def print_gpu_memory():
 def train_ppo(
     n_tanks,
     max_buffer_size=10000,
-    batch_size=32,          # per agent
+    batch_size=64,          # per agent
     total_timesteps=500000,
     gamma=0.99,
     gae_lambda=0.95,
-    num_epochs=10,
+    num_epochs=20,
     lr=3e-4,
     clip_range=0.2,
     value_coeff=0.5,
@@ -508,6 +508,11 @@ def train_ppo(
                 stats = obs[agent]["s"]
 
                 action, log_prob, value = policy.get_action(image, stats)
+
+                rx, ry, shoot = env.env._auto_shoot(agent)
+                action["d"][2] = shoot
+                action["c"] = [rx, ry]
+
                 actions[agent] = action
 
             next_obs, rewards, dones, truncations, _ = env.step(actions)

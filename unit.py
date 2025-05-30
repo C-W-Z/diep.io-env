@@ -1,9 +1,11 @@
 import numpy as np
-from enum import Enum
+from enum import IntEnum
 from config import config as cfg
 import itertools
+from numba import njit
+from utils import clip_scalar
 
-class UnitType(Enum):
+class UnitType(IntEnum):
     Tank    = 0
     Polygon = 1
     Bullet  = 2
@@ -62,26 +64,15 @@ class Unit:
     def deal_damage(self, collider: "Unit", self_hp_before_hit = None):
         if self_hp_before_hit == None:
             self_hp_before_hit = self.hp
-        body_dmg = collider.body_damage * (0.25 if self.type == UnitType.Bullet else 1.0)
-        damage_scale = 1.0
-        if collider.type == UnitType.Bullet:
-            damage_scale = 0.25
-        elif collider.type == UnitType.Tank and self.type == UnitType.Tank:
-            damage_scale = 1.5
-        if self_hp_before_hit >= body_dmg:
-            collider.hp -= damage_scale * self.body_damage
-        else:
-            collider.hp -= damage_scale * self.body_damage * self_hp_before_hit / body_dmg
-        if collider.hp < 0:
-            collider.hp = 0.0
-            self.add_score(min(collider.score, cfg.EXP_LIST[-1]))
-        else:
-            collider.hp_regen_frame = cfg.SLOW_HP_REGEN_FRAMES
-            collider.invulberable_frame = cfg.INVULNERABLE_FRAMES
 
-            if collider.type == UnitType.Tank and collider.same_collider_counter == 2 and collider.last_collider_id == self.id:
-                collider.invulberable_frame = cfg.TANK_LONG_INVULNERABLE_FRAMES
-                # print("same", collider.same_collider_counter)
+        collider.hp, score_to_add, collider.hp_regen_frame, collider.invulberable_frame = deal_damage_unit(
+            self_hp_before_hit, self.body_damage, self.type,
+            collider.hp, collider.body_damage, collider.type, collider.score,
+            cfg.EXP_LIST[-1], cfg.SLOW_HP_REGEN_FRAMES, cfg.INVULNERABLE_FRAMES, cfg.TANK_LONG_INVULNERABLE_FRAMES
+        )
+
+        if score_to_add != 0:
+            self.add_score(score_to_add)
 
     def regen_health(self):
         if not self.alive:
@@ -99,65 +90,96 @@ class Unit:
         if self.hp_regen_frame > 0:
             self.hp_regen_frame -= 1
 
+    # 在 Unit 类的 move 方法中调用
     def move(self, dx: float, dy: float):
         if not self.alive:
             return
-
-        # Handle normal motion
         max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
+        self.x, self.y, self.vx, self.vy, self.ax, self.ay, self.collision_vx, self.collision_vy, \
+        self.collision_frame, self.recoil_vx, self.recoil_vy = move_unit(
+            self.x, self.y, dx, dy, self.vx, self.vy, self.ax, self.ay, self.radius, self.v_scale,
+            self.collision_vx, self.collision_vy, self.collision_frame, self.max_collision_frame,
+            self.recoil_vx, self.recoil_vy, max_v, cfg.BASE_ACC_FRAMES, cfg.BASE_DEC_FRAMES,
+            cfg.TANK_RECOIL_V_SCALE if self.type == UnitType.Tank else 0.0,
+            cfg.TANK_RECOIL_DECAY if self.type == UnitType.Tank else 0.0, cfg.MAP_SIZE
+        )
 
-        if dx != 0 or dy != 0:
-            magnitude = np.hypot(dx, dy)
-            dx, dy = dx / magnitude, dy / magnitude
-            self.ax = dx * max_v / cfg.BASE_ACC_FRAMES
-            self.ay = dy * max_v / cfg.BASE_ACC_FRAMES
-        else:
-            speed = np.hypot(self.vx, self.vy)
-            if speed < 1e-6:
-                self.vx = 0.0
-                self.vy = 0.0
-                self.ax = 0.0
-                self.ay = 0.0
-            elif speed > 0:
-                dx, dy = -self.vx / speed, -self.vy / speed
-                self.ax = dx * max_v / cfg.BASE_DEC_FRAMES
-                self.ay = dy * max_v / cfg.BASE_DEC_FRAMES
+@njit
+def move_unit(x, y, dx, dy, vx, vy, ax, ay, radius, v_scale, collision_vx, collision_vy,
+              collision_frame, max_collision_frame, recoil_vx, recoil_vy, max_v, base_acc_frames,
+              base_dec_frames, tank_recoil_v_scale, tank_recoil_decay, map_size):
+    # Handle normal motion
+    if dx != 0 or dy != 0:
+        magnitude = np.hypot(dx, dy)
+        dx, dy = dx / magnitude, dy / magnitude
+        ax = dx * max_v / base_acc_frames
+        ay = dy * max_v / base_acc_frames
+    else:
+        speed = np.hypot(vx, vy)
+        if speed < 1e-6:
+            vx, vy, ax, ay = 0.0, 0.0, 0.0, 0.0
+        elif speed > 0:
+            dx, dy = -vx / speed, -vy / speed
+            ax = dx * max_v / base_dec_frames
+            ay = dy * max_v / base_dec_frames
 
-        self.vx += self.ax
-        self.vy += self.ay
-        normal_speed = np.hypot(self.vx, self.vy)
-        if normal_speed > max_v:
-            self.vx = self.vx * max_v / normal_speed
-            self.vy = self.vy * max_v / normal_speed
+    vx += ax
+    vy += ay
+    normal_speed = np.hypot(vx, vy)
+    if normal_speed > max_v:
+        vx = vx * max_v / normal_speed
+        vy = vy * max_v / normal_speed
 
-        # Handle collision motion
-        collision_vx, collision_vy = 0.0, 0.0
-        if self.collision_frame > 0:
-            factor = self.collision_frame / self.max_collision_frame
-            collision_vx = self.collision_vx * factor
-            collision_vy = self.collision_vy * factor
-            self.collision_frame -= 1
-        else:
-            self.collision_frame = 0
-            self.collision_vx = 0.0
-            self.collision_vy = 0.0
+    # Handle collision motion
+    if collision_frame > 0:
+        factor = collision_frame / max_collision_frame
+        collision_vx = collision_vx * factor
+        collision_vy = collision_vy * factor
+        collision_frame -= 1
+    else:
+        collision_frame, collision_vx, collision_vy = 0, 0.0, 0.0
 
-        # Recoil
-        if self.type == UnitType.Tank:
-            recoil_vx = self.recoil_vx * cfg.TANK_RECOIL_V_SCALE
-            recoil_vy = self.recoil_vy * cfg.TANK_RECOIL_V_SCALE
+    # Recoil (simplified for Tank)
+    recoil_vx = recoil_vx * tank_recoil_v_scale
+    recoil_vy = recoil_vy * tank_recoil_v_scale
+    recoil_vx *= tank_recoil_decay
+    recoil_vy *= tank_recoil_decay
 
-            # decay speed
-            self.recoil_vx *= cfg.TANK_RECOIL_DECAY
-            self.recoil_vy *= cfg.TANK_RECOIL_DECAY
-        else:
-            recoil_vx = recoil_vy = 0.0
+    total_vx = vx + collision_vx + recoil_vx
+    total_vy = vy + collision_vy + recoil_vy
 
-        self.total_vx = self.vx + collision_vx + recoil_vx
-        self.total_vy = self.vy + collision_vy + recoil_vy
+    x += total_vx
+    y += total_vy
 
-        self.x += self.total_vx
-        self.y += self.total_vy
+    x = clip_scalar(x, radius, map_size - radius)
+    y = clip_scalar(y, radius, map_size - radius)
 
-        self.x = np.clip(self.x, self.radius, cfg.MAP_SIZE - self.radius)
-        self.y = np.clip(self.y, self.radius, cfg.MAP_SIZE - self.radius)
+    return x, y, vx, vy, ax, ay, collision_vx, collision_vy, collision_frame, recoil_vx, recoil_vy
+
+@njit
+def deal_damage_unit(self_hp, self_body_damage, self_type,
+                     collider_hp, collider_body_damage, collider_type, collider_score,
+                     max_exp, slow_hp_regen_frames, invulnerable_frames, tank_long_invulnerable_frames):
+    self_hp_before_hit = self_hp
+    body_dmg = collider_body_damage * (0.25 if self_type == 2 else 1.0)  # UnitType.Bullet = 2
+    damage_scale = 1.0
+    if collider_type == 2:  # Bullet
+        damage_scale = 0.25
+    elif collider_type == 0 and self_type == 0:  # Tank vs Tank
+        damage_scale = 1.5
+
+    if self_hp_before_hit >= body_dmg:
+        collider_hp -= damage_scale * self_body_damage
+    else:
+        collider_hp -= damage_scale * self_body_damage * self_hp_before_hit / body_dmg
+
+    score_to_add = 0
+    if collider_hp < 0:
+        collider_hp = 0.0
+        score_to_add = min(collider_score, max_exp)
+    else:
+        hp_regen_frame = slow_hp_regen_frames
+        invulnerable_frame = invulnerable_frames
+        if collider_type == 0 and self_type == 0:  # Tank vs Tank
+            invulnerable_frame = tank_long_invulnerable_frames
+    return collider_hp, score_to_add, hp_regen_frame, invulnerable_frame

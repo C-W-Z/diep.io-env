@@ -1,6 +1,12 @@
 import numpy as np
 import pygame.draw
 import math
+from numba import njit
+
+@njit
+def clip_scalar(value, min_val, max_val):
+    """Scalar clipping function compatible with Numba."""
+    return max(min_val, min(max_val, value))
 
 # https://stackoverflow.com/a/73855696
 def draw_rectangle(screen, x, y, width, height, color, rx, ry):

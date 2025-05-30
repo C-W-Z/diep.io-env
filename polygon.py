@@ -1,6 +1,7 @@
 import numpy as np
 from unit import Unit, UnitType
 from config import config as cfg
+from numba import njit
 
 class Polygon(Unit):
     def __init__(self, x, y, side, new_id=True):
@@ -23,11 +24,17 @@ class Polygon(Unit):
         self.v_scale = cfg.POLYGON_V_SCALE
 
     def update_direction(self):
-        self.angle += self.rotate_dir * cfg.POLYGON_ROTATE_SPEED
-        if self.angle > 2 * np.pi:
-            self.angle -= 2 * np.pi
-        elif self.angle < -2 * np.pi:
-            self.angle += 2 * np.pi
+        self.angle, self.rx, self.ry = update_polygon_direction(
+            self.angle, self.rotate_dir, cfg.POLYGON_ROTATE_SPEED
+        )
 
-        self.rx = np.cos(self.angle)
-        self.ry = np.sin(self.angle)
+@njit
+def update_polygon_direction(angle, rotate_dir, rotate_speed):
+    angle += rotate_dir * rotate_speed
+    if angle > 2 * np.pi:
+        angle -= 2 * np.pi
+    elif angle < -2 * np.pi:
+        angle += 2 * np.pi
+    rx = np.cos(angle)
+    ry = np.sin(angle)
+    return angle, rx, ry
