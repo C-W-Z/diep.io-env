@@ -536,6 +536,32 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
         # return obs_array
 
+    def _auto_choose_skill(self, agent: str, mode=0):
+        tank: Tank = self.tanks[int(agent.split("_")[1])]
+
+        if tank.skill_points == 0:
+            return 0
+
+        if mode == 1: # bullet shoot
+            min_skill = min(tank.stats[TST.BulletPen], tank.stats[TST.BulletDamage], tank.stats[TST.Reload])
+            for i in [TST.BulletPen, TST.BulletDamage, TST.Reload]:
+                if tank.stats[i] == min_skill:
+                    return i
+            if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
+                return TST.BulletSpeed
+            return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage])
+
+        elif mode == 2: # body damage
+            min_skill = min(tank.stats[TST.HealthRegen], tank.stats[TST.MaxHealth], tank.stats[TST.BodyDamage])
+            for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
+                if tank.stats[i] == min_skill:
+                    return i
+            if min_skill == 7 and tank.stats[TST.Speed] < 5:
+                return TST.Speed
+            return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload])
+
+        return np.random.randint(1, 9) # choose 1 ~ 8
+
     def _auto_shoot(self, agent: str):
         tank: Tank = self.tanks[int(agent.split("_")[1])]
         self_x, self_y = tank.x, tank.y
@@ -1017,7 +1043,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 if __name__ == "__main__":
     env_config = {
         "n_tanks": 2,
-        "render_mode": True,
+        "render_mode": "human",
         "max_steps": 1000000,
     }
 
@@ -1030,16 +1056,21 @@ if __name__ == "__main__":
         check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
     while True:
-        action = env._get_player_input()
-
+        action_0 = env._get_player_input()
         rx, ry, shoot = env._auto_shoot("agent_0")
-        action["d"][2] = shoot
-        action["c"] = [rx, ry]
+        action_0["d"][2] = shoot
+        action_0["c"] = [rx, ry]
+        action_0["d"][3] = env._auto_choose_skill("agent_0", mode=0)
 
+        action_1 = env._get_random_input()
+        rx, ry, shoot = env._auto_shoot("agent_1")
+        action_1["d"][2] = shoot
+        action_1["c"] = [rx, ry]
+        action_1["d"][3] = env._auto_choose_skill("agent_1", mode=0)
 
         obs, rewards, dones, truncations, infos = env.step({
-            "agent_0": action,
-            "agent_1": env._get_random_input(),
+            "agent_0": action_0,
+            "agent_1": action_1,
         })
         for i in range(env.n_tanks):
             check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
