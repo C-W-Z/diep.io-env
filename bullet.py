@@ -2,6 +2,7 @@ import numpy as np
 from unit import Unit, UnitType
 from config import config as cfg
 from tank import Tank
+from typing import Optional
 
 class Bullet(Unit):
     def __init__(
@@ -15,6 +16,7 @@ class Bullet(Unit):
         rx,
         ry,
         v_scale,
+        new_id=True
     ):
 
         super().__init__(
@@ -25,6 +27,7 @@ class Bullet(Unit):
             body_damage=bullet_damage,
             radius=radius,
             score=0,
+            new_id=new_id
         )
 
         self.tank = tank
@@ -104,3 +107,46 @@ class Bullet(Unit):
         # remove bullet if it goes out of map bounds
         if not (-self.radius <= self.x <= cfg.MAP_SIZE + self.radius and -self.radius <= self.y <= cfg.MAP_SIZE + self.radius):
             self.hp = 0.0
+
+class BulletPool:
+    def __init__(self, max_bullets: int = 18):
+        self.max_bullets = max_bullets
+        self.bullets: list[Bullet] = []
+
+        # Pre-create bullet instances with unique IDs
+        for _ in range(max_bullets):
+            bullet = Bullet(
+                x=0.0,
+                y=0.0,
+                max_hp=0,
+                bullet_damage=0,
+                radius=0.5,
+                tank=None,
+                rx=0.0,
+                ry=0.0,
+                v_scale=1.0,
+            )
+            self.bullets.append(bullet)
+
+    def get_new_bullet(self, tank: Tank) -> Optional[Bullet]:
+        """Get an inactive bullet from the pool if available."""
+        for bullet in self.bullets:
+            if bullet.alive:
+                continue
+            # Reset bullet properties
+            bx = tank.x + tank.radius * tank.rx * 2
+            by = tank.y + tank.radius * -tank.ry * 2
+            bullet.__init__(
+                x=bx,
+                y=by,
+                max_hp = tank.bullet_max_hp,
+                bullet_damage = tank.bullet_damage,
+                radius = tank.bullet_radius,
+                tank = tank,
+                rx = tank.rx,
+                ry = -tank.ry,
+                v_scale = tank.bullet_v_scale,
+                new_id=False
+            )
+            return bullet
+        return None
