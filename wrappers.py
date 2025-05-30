@@ -167,10 +167,13 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         for agent, obs in observations.items():
             # Normalize obs
             normalized_obs = (obs - self.obs_low) / self.obs_scale
-            self.frame_buffers[agent].append(normalized_obs)
 
-            # Stack obs
-            processed_obs[agent] = np.concatenate(self.frame_buffers[agent], axis=0)
+            if self.frame_stack_size > 1:
+                self.frame_buffers[agent].append(normalized_obs)
+                # Stack obs
+                processed_obs[agent] = np.concatenate(self.frame_buffers[agent], axis=0)
+            else:
+                processed_obs[agent] = normalized_obs
 
         return processed_obs
 
@@ -186,10 +189,13 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
             # Initialize buffers with first obs
             normalized_obs = (obs[agent] - self.obs_low) / self.obs_scale
 
-            for _ in range(self.frame_stack_size):
-                self.frame_buffers[agent].append(normalized_obs)
+            if self.frame_stack_size > 1:
+                for _ in range(self.frame_stack_size):
+                    self.frame_buffers[agent].append(normalized_obs)
 
-            obs[agent] = np.concatenate(self.frame_buffers[agent], axis=0)
+                obs[agent] = np.concatenate(self.frame_buffers[agent], axis=0)
+            else:
+                obs[agent] = normalized_obs
 
         return obs, info
 

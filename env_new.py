@@ -890,7 +890,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     tank.calc_stats_properties()
                     self._rewards[agent] += 1
                 else:
-                    self._rewards[agent] -= 0.1
+                    self._rewards[agent] -= 0.01
 
             # avoid zero-division
             if dx != 0 or dy != 0:

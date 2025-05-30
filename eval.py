@@ -1,7 +1,7 @@
 import ray
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
-from env import DiepIOEnvBasic
+from env_new import DiepIOEnvBasic
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
 
@@ -17,7 +17,7 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "/home/cwz/ray_results/diepio_selfplay/PPO_diepio-v0_1084a_00000_0_2025-05-28_22-28-46/checkpoint_001170"
+checkpoint_path = "~/ray_results/diepio_fixedobs_selfplay/PPO_diepio-v0_ff217_00000_0_2025-05-30_20-45-42/checkpoint_000040"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
@@ -34,6 +34,8 @@ env = DiepIOEnvBasic({
 obs, _ = env.reset()
 
 done = {"__all__": False}
+
+total_rewards = {agent: 0.0 for agent in env._agent_ids}
 
 while not done["__all__"]:
     actions = {}
@@ -60,3 +62,8 @@ while not done["__all__"]:
         actions[agent_id] = sample_dict
 
     obs, rewards, done, trunc, infos = env.step(actions)
+
+    for agent, reward in rewards.items():
+        total_rewards[agent] += reward
+
+print("Total Rewards:", total_rewards)

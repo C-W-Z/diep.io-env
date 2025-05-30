@@ -2,11 +2,12 @@ import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 from env_new import DiepIOEnvBasic
+from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIOEnvBasic(env_config)
+    return DiepIO_FixedOBS_Wrapper(env_config)
 
 register_env("diepio-v0", env_creator)
 
@@ -21,8 +22,8 @@ env_config = {
     "n_tanks": 2,
     "render_mode": False,
     "max_steps": 1000000,
-    # "frame_stack_size": 4,
-    # "skip_frames": 4,
+    "frame_stack_size": 1,
+    "skip_frames": 4,
 }
 
 # Get observation and action spaces
@@ -68,8 +69,8 @@ config = (
         policies_to_train=["shared_policy"]
     )
     .training(
-        train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
-        minibatch_size=128,         # ✅ 減少分割用記憶體
+        train_batch_size=256,       # ✅ 減少一次訓練的記憶體需求
+        minibatch_size=64,         # ✅ 減少分割用記憶體
         gamma=0.99,
         lr=1e-4,
         model={
@@ -92,7 +93,7 @@ tuner = tune.Tuner(
         name="diepio_fixedobs_selfplay",
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
-            checkpoint_frequency=10,
+            checkpoint_frequency=50,
             num_to_keep=3,
             # checkpoint_score_attribute="episode_reward_mean",
             # checkpoint_score_order="max"
