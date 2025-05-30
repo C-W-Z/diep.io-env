@@ -138,7 +138,7 @@ class DiepIO_FixedOBS_Wrapper(Wrapper):
         self.observation_space = spaces.Box(
             low=0,
             high=1,
-            shape=(env.observation_space.shape[0], frame_stack_size),
+            shape=(env.observation_space.shape[0] * frame_stack_size, ),
             dtype=np.float32
         )
         self.observation_spaces = {
@@ -160,10 +160,10 @@ class DiepIO_FixedOBS_Wrapper(Wrapper):
         for agent, obs in observations.items():
             # Normalize obs
             normalized_obs = (obs - self.obs_low) / self.obs_scale
-            self.frame_buffers[agent].append(normalized_obs[:, np.newaxis])
+            self.frame_buffers[agent].append(normalized_obs)
 
             # Stack obs
-            processed_obs[agent] = np.concatenate(self.frame_buffers[agent], axis=-1)
+            processed_obs[agent] = np.concatenate(self.frame_buffers[agent], axis=0)
 
         return processed_obs
 
@@ -180,9 +180,9 @@ class DiepIO_FixedOBS_Wrapper(Wrapper):
             normalized_obs = (obs[agent] - self.obs_low) / self.obs_scale
 
             for _ in range(self.frame_stack_size):
-                self.frame_buffers[agent].append(normalized_obs[:, np.newaxis])
+                self.frame_buffers[agent].append(normalized_obs)
 
-            obs[agent] = np.concatenate(self.frame_buffers[agent], axis=-1)
+            obs[agent] = np.concatenate(self.frame_buffers[agent], axis=0)
 
         return obs, info
 

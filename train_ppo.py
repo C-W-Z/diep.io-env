@@ -1,12 +1,13 @@
 import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
-from env import DiepIOEnvBasic
+from env_new import DiepIOEnvBasic
+from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIOEnvBasic(env_config)
+    return DiepIO_FixedOBS_Wrapper(DiepIOEnvBasic(env_config))
 
 register_env("diepio-v0", env_creator)
 
@@ -18,9 +19,12 @@ def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # Get observation and action spaces
-temp_env = DiepIOEnvBasic({"n_tanks": 2})
+temp_env = env_creator({"n_tanks": 2})
 obs_space = temp_env.observation_space
 act_space = temp_env.action_space
+
+print("Observation space:", obs_space)
+print("Action space:", act_space)
 
 # Configure PPO
 config = (
@@ -35,7 +39,7 @@ config = (
             "n_tanks": 2,
             "render_mode": False,
             "max_steps": 1000000,
-            "unlimited_obs": False
+            "unlimited_obs": False,
         }
     )
     .framework("torch")
@@ -74,8 +78,8 @@ tuner = tune.Tuner(
     "PPO",
     param_space=config.to_dict(),
     run_config=tune.RunConfig(
-        stop={"training_iteration": 100000},
-        name="diepio_selfplay",
+        stop={"training_iteration": 1000000},
+        name="diepio_fixedobs_selfplay",
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
             checkpoint_frequency=10,
