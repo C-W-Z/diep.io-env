@@ -18,14 +18,14 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim/PPO_diepio-v0_c50a8_00000_0_2025-05-31_00-25-59/checkpoint_000006"
+checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim_1agent/PPO_diepio-v0_518dd_00000_0_2025-05-31_01-48-39/checkpoint_000005"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
 module = algo.get_module("shared_policy")
 
 env_config = {
-    "n_tanks": 2,
+    "n_tanks": 1,
     "render_mode": "human",
     "max_steps": 40000,
     "frame_stack_size": 1,

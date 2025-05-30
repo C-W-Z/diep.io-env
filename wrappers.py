@@ -280,7 +280,7 @@ def test_fixedobs_wrapper():
     from utils import check_obs_in_space
 
     env_config = {
-        "n_tanks": 2,
+        "n_tanks": 1,
         "render_mode": "human",
         "max_steps": 1000000,
         "frame_stack_size": 1,
@@ -295,19 +295,19 @@ def test_fixedobs_wrapper():
 
     obs, _ = env.reset()
 
-    for i in range(2):
+    for i in range(env.env.n_tanks):
         check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
     while True:
         action_0 = env.env._get_player_input()
         action_0["d"] = action_0["d"][:2]
-        action_1 = env.env._get_random_input()
-        action_1["d"] = action_1["d"][:2]
+        # action_1 = env.env._get_random_input()
+        # action_1["d"] = action_1["d"][:2]
         obs, rewards, dones, truncations, infos = env.step({
             "agent_0": action_0,
-            "agent_1": action_1,
+            # "agent_1": action_1,
         })
-        for i in range(2):
+        for i in range(env.env.n_tanks):
             check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
         if dones["__all__"]:
