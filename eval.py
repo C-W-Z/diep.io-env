@@ -2,6 +2,7 @@ import ray
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
 from env_new import DiepIOEnvBasic
+from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
 
@@ -9,7 +10,7 @@ from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIOEnvBasic(env_config)
+    return DiepIO_FixedOBS_Wrapper(env_config)
 
 register_env("diepio-v0", env_creator)
 
@@ -17,19 +18,23 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_fixedobs_selfplay/PPO_diepio-v0_c8bb3_00000_0_2025-05-30_22-10-04/checkpoint_000010"
+checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim/PPO_diepio-v0_c50a8_00000_0_2025-05-31_00-25-59/checkpoint_000006"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
 module = algo.get_module("shared_policy")
 
+env_config = {
+    "n_tanks": 2,
+    "render_mode": "human",
+    "max_steps": 40000,
+    "frame_stack_size": 1,
+    "skip_frames": 4,
+    "skill_mode": [0, 0]
+}
+
 # 設定 render 模式的環境
-env = DiepIOEnvBasic({
-    "n_tanks": 1,
-    "render_mode": True,
-    "max_steps": 1000000,
-    "unlimited_obs": False
-})
+env = env_creator(env_config)
 
 obs, _ = env.reset()
 
@@ -65,5 +70,7 @@ while not done["__all__"]:
 
     for agent, reward in rewards.items():
         total_rewards[agent] += reward
+
+    done["__all__"] |= trunc["__all__"]
 
 print("Total Rewards:", total_rewards)

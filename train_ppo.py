@@ -19,12 +19,12 @@ def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 env_config = {
-    "n_tanks": 2,
+    "n_tanks": 1,
     "render_mode": False,
     "max_steps": 40000,
     "frame_stack_size": 1,
     "skip_frames": 4,
-    "skill_mode": [0, 0]
+    "skill_mode": [0]
 }
 
 # Get observation and action spaces
@@ -78,8 +78,8 @@ config = (
             # "fcnet_hiddens": [512, 512, 256],  # Deeper and wider network
             "fcnet_activation": "tanh",
             "use_lstm": True,
-            "fcnet_hiddens": [256, 256],
-            "lstm_cell_size": 256,
+            "fcnet_hiddens": [256, 128],
+            "lstm_cell_size": 128,
             "max_seq_len": 16,
         }
     )
@@ -91,7 +91,7 @@ tuner = tune.Tuner(
     param_space=config.to_dict(),
     run_config=tune.RunConfig(
         stop={"training_iteration": 1000000},
-        name="diepio_fixedobs_only_move_aim",
+        name="diepio_fixedobs_only_move_aim_1agent",
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
             checkpoint_frequency=50,

@@ -80,6 +80,13 @@ class Tank(Unit):
         self.skill_points += level2sp(self.level) - level2sp(old_level)
         self.calc_stats_properties()
 
+    def reset_score(self, score):
+        old_level = self.level
+        self.score = score
+        self.level = score2level(self.score, cfg.EXP_LIST)
+        if self.level < old_level:
+            self.calc_stats_properties()
+
     def add_points(self, i: int):
         if self.skill_points == 0:
             return False

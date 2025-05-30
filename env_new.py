@@ -772,6 +772,8 @@ class DiepIOEnvBasic(MultiAgentEnv):
         max_v = cfg.BASE_MAX_VELOCITY * cfg.TANK_TANK_BOUNCE_V_SCALE
         tank0_hp_before_hit = tank0.hp
 
+        tank0_score, tank1_score = tank0.score, tank1.score
+
         if tank0.invulberable_frame == 0 and tank1.invulberable_frame == 0:
             tank0.collision_vx = nx * max_v
             tank0.collision_vy = ny * max_v
@@ -784,6 +786,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
             tank1.collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank1.max_collision_frame = cfg.TANK_BOUNCE_DEC_FRAMES
             tank0.deal_damage(tank1, tank0_hp_before_hit)
+
+            if not tank0.alive and not tank1.alive:
+                tank0.reset_score(tank0_score)
+                tank1.reset_score(tank1_score)
+                return
 
             if tank0.last_collider_id == tank1.id:
                 tank0.same_collider_counter += 1
