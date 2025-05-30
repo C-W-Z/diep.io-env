@@ -223,7 +223,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             screen.blit(text_surf, (offset_x + 10 * scale, y))
 
             # draw plus button
-            btn = pygame.Rect(offset_x + 200 * scale, y - 5 * scale, 30 * scale, 20 * cfg.MAP_SIZE / 800)
+            btn = pygame.Rect(offset_x + 200 * scale, y - 5 * scale, 30 * scale, 20 * scale)
             btn_color = (0,200,0) if tank.skill_points > 0 else (150,150,150)
             pygame.draw.rect(screen, btn_color, btn)
             plus_surf = font.render("+", True, (0,0,0))
