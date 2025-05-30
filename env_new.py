@@ -55,11 +55,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self.bullet_features = len(bullet_low)
 
         # === Padding sizes ===
-        low += polygon_low * self.obs_max_polygons
-        high += polygon_high * self.obs_max_polygons
-
         low += tank_low * self.obs_max_tanks
         high += tank_high * self.obs_max_tanks
+
+        low += polygon_low * self.obs_max_polygons
+        high += polygon_high * self.obs_max_polygons
 
         low += bullet_low * self.obs_max_bullets
         high += bullet_high * self.obs_max_bullets
@@ -232,7 +232,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     1 if bullet.tank.id != agent.id else 0      # Is enemy bullet or not [0, 1]
                 ])
 
-        return np.concatenate([obs, polygon_obs.flatten(), tanks_obs.flatten(), bullet_obs.flatten()], dtype=np.float32)
+        return np.concatenate([obs, tanks_obs.flatten(), polygon_obs.flatten(), bullet_obs.flatten()], dtype=np.float32)
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         scale = cfg.SCREEN_SIZE / 800
