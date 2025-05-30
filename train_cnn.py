@@ -338,7 +338,7 @@ class PPOPolicy(nn.Module):
         self.optimizer.step()
 
         approx_kl = ((ratio - 1) - (new_log_prob - log_prob_batch)).mean()
-        return pi_loss.item(), value_loss.item(), total_loss.item(), approx_kl.item(), torch.exp(self.log_std).mean().item()
+        return pi_loss.item(), value_loss.item(), entropy_loss.item(), total_loss.item(), approx_kl.item(), torch.exp(self.log_std).mean().item()
 
 ###########################################
 # Utility Functions
@@ -396,9 +396,10 @@ def learn(policy: PPOPolicy, buffers: dict[str, ReplayBuffer], num_epochs, batch
         for key in all_batches[0].keys():
             combined_batch[key] = torch.cat([batch[key] for batch in all_batches], dim=0)
 
-        pi_loss, v_loss, total_loss, approx_kl, std = policy.update(combined_batch)
+        pi_loss, v_loss, entropy_loss, total_loss, approx_kl, std = policy.update(combined_batch)
         writer.add_scalar("train/pi_loss", pi_loss, timestep)
         writer.add_scalar("train/v_loss", v_loss, timestep)
+        writer.add_scalar("train/entropy_loss", entropy_loss, timestep)
         writer.add_scalar("train/total_loss", total_loss, timestep)
         writer.add_scalar("train/approx_kl", approx_kl, timestep)
         writer.add_scalar("train/std", std, timestep)
@@ -422,11 +423,11 @@ def train_ppo(
     gamma=0.99,
     gae_lambda=0.95,
     num_epochs=10,
-    lr=1e-4,
+    lr=3e-4,
     clip_range=0.2,
     value_coeff=0.5,
-    entropy_coeff=0.05,
-    max_grad_norm=0.5,
+    entropy_coeff=0.01,
+    max_grad_norm=5.0,
     initial_std=1.0,
     save_interval=10,
     checkpoint_path=None,
@@ -436,7 +437,7 @@ def train_ppo(
     # Initialize environment
     env_config = {
         "n_tanks": n_tanks,
-        "render_mode": False,  # Disable rendering to save memory
+        "render_mode": True,  # Disable rendering to save memory
         "max_steps": 4 * max_buffer_size // n_tanks,
         "resize_shape": (100, 100),
         "frame_stack_size": 4,
@@ -500,7 +501,7 @@ def train_ppo(
 
         while not dones["__all__"] and timestep < total_timesteps:
             actions = {}
-            for agent in env.agents:
+            for agent in env.possible_agents:
                 if dones[agent]:
                     continue
                 image = obs[agent]["i"]
@@ -600,9 +601,9 @@ if __name__ == "__main__":
     print("Starting single-agent training (n_tanks=1)...")
     train_ppo(
         n_tanks=1,
-        total_timesteps=500000,
+        total_timesteps=5000000,
         checkpoint_dir=checkpoint_dir,
-        # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
+        checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint_218.pt"),
         phase="single-agent"
     )
 

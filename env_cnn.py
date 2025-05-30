@@ -579,9 +579,9 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
-                    self._rewards[self._agent_ids[bullet.tank.id]] += 1
+                    self._rewards[self._agent_ids[bullet.tank.id]] += 0.1
                     if thing.type == UnitType.Tank:
-                        self._rewards[self._agent_ids[thing.id]] -= 1
+                        self._rewards[self._agent_ids[thing.id]] -= 0.1
 
                 max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
                 # print(max_v)
@@ -678,7 +678,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             poly.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
-            self._rewards[self._agent_ids[tank.id]] += 1
+            self._rewards[self._agent_ids[tank.id]] += 0.1
 
             if tank.last_collider_id == poly.id:
                 tank.same_collider_counter += 1
@@ -732,14 +732,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
         observations = {}
         truncations = {agent: False for agent in self._agent_ids}
 
-        assert(len(actions) == self.n_tanks)
+        assert len(actions) == self.n_tanks, f"{self.n_tanks}, {actions}"
 
         # Process actions for each agent
         for agent, action in actions.items():
             agent_idx = int(agent.split("_")[1])
             tank = self.tanks[agent_idx]
             if not tank.alive or self._dones[agent]:
-                self._rewards[agent] = 0.0
                 continue
 
             tank.regen_health()
@@ -755,7 +754,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 dx > 0 and tank.x >= cfg.MAP_SIZE - tank.radius - 1e-6 or
                 dy < 0 and tank.y <= tank.radius + 1e-6 or
                 dy > 0 and tank.y >= cfg.MAP_SIZE - tank.radius - 1e-6):
-                self._rewards[agent] -= 0.01
+                self._rewards[agent] -= 0.001
 
             old_x, old_y = tank.x, tank.y
 
@@ -836,10 +835,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
             tank = self.tanks[agent_idx]
             self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
             self.prev_tanks_score[agent_idx] = tank.score
-            if not self._dones[agent] and (not tank.alive or self.no_reward_frames[agent_idx] > 30 * cfg.FPS):
+            if not self._dones[agent] and not tank.alive:
                 tank.hp = 0
                 tank.calc_respawn_score()
                 self._rewards[agent] -= 10
+                self._dones[agent] = True
+                self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
+            if tank.alive and self.no_reward_frames[agent_idx] > 30 * cfg.FPS:
                 self._dones[agent] = True
                 self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
             elif self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
@@ -856,7 +858,8 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         self.step_count += 1
         if (self.step_count >= self.max_steps or
-            sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1):
+            sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or
+            sum(self._dones[agent] for agent in self._agent_ids) == self.n_tanks):
             self._dones = {agent: True for agent in self._agent_ids}
             self._dones["__all__"] = True
 
