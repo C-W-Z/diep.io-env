@@ -446,6 +446,32 @@ class DiepIOEnvBasic(MultiAgentEnv):
         # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
         # return obs_array
 
+    def _auto_choose_skill(self, agent: str, mode=0):
+        tank: Tank = self.tanks[int(agent.split("_")[1])]
+
+        if tank.skill_points == 0:
+            return 0
+
+        if mode == 1: # bullet shoot
+            min_skill = min(tank.stats[TST.BulletPen], tank.stats[TST.BulletDamage], tank.stats[TST.Reload])
+            for i in [TST.BulletPen, TST.BulletDamage, TST.Reload]:
+                if tank.stats[i] == min_skill:
+                    return i + 1
+            if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
+                return TST.BulletSpeed + 1
+            return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage]) + 1
+
+        elif mode == 2: # body damage
+            min_skill = min(tank.stats[TST.HealthRegen], tank.stats[TST.MaxHealth], tank.stats[TST.BodyDamage])
+            for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
+                if tank.stats[i] == min_skill:
+                    return i + 1
+            if min_skill == 7 and tank.stats[TST.Speed] < 5:
+                return TST.Speed + 1
+            return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
+
+        return np.random.randint(1, 9) # choose 1 ~ 8
+
     def _auto_shoot(self, agent: str):
         tank: Tank = self.tanks[int(agent.split("_")[1])]
         self_x, self_y = tank.x, tank.y
@@ -801,7 +827,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                     tank.calc_stats_properties()
                     self._rewards[agent] += 1
                 else:
-                    self._rewards[agent] -= 0.1
+                    self._rewards[agent] -= 0.01
 
             # avoid zero-division
             if dx != 0 or dy != 0:
