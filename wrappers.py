@@ -139,8 +139,14 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         self.frame_stack_size = env_config.get("frame_stack_size", 4)
         self.skip_frames = env_config.get("skip_frames", 4)  # Number of frames to skip (apply same action)
 
-        self.action_space = self.env.action_space
+        self.skill_mode = env_config.get("skill_mode", [0 for _ in self.env._agent_ids])
+
+        self.action_space = spaces.Dict({
+            "d": spaces.MultiDiscrete([3, 3]),                             # discrete
+            "c": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
+        })
         self.action_spaces = self.env.action_spaces
+
         self.observation_space = spaces.Box(
             low=0,
             high=1,
@@ -206,6 +212,10 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         infos            = {agent: {} for agent in self.env._agent_ids}
         dones["__all__"] = False
 
+        for i, agent in enumerate(self.env._agent_ids):
+            skill_index = self.env._auto_choose_skill(agent, mode=self.skill_mode[i])
+            actions[agent]["d"] = np.concatenate((actions[agent]["d"], np.array([1, skill_index])))
+
         for f in range(self.skip_frames):
             obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
 
@@ -242,7 +252,7 @@ def test_cnn_wrapper():
 
     env_config = {
         "n_tanks": 2,
-        "render_mode": True,
+        "render_mode": "True",
         "max_steps": 1000000,
         "unlimited_obs": False
     }
@@ -275,10 +285,11 @@ def test_fixedobs_wrapper():
 
     env_config = {
         "n_tanks": 2,
-        "render_mode": True,
+        "render_mode": "human",
         "max_steps": 1000000,
-        "frame_stack_size": 4,
+        "frame_stack_size": 1,
         "skip_frames": 4,
+        "skill_mode": [1, 2]
     }
 
     env = DiepIO_FixedOBS_Wrapper(env_config)
@@ -292,15 +303,20 @@ def test_fixedobs_wrapper():
         check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
     while True:
+        action_0 = env.env._get_player_input()
+        action_0["d"] = action_0["d"][:2]
+        action_1 = env.env._get_random_input()
+        action_1["d"] = action_1["d"][:2]
         obs, rewards, dones, truncations, infos = env.step({
-            "agent_0": env.env._get_player_input(),
-            "agent_1": env.env._get_random_input(),
+            "agent_0": action_0,
+            "agent_1": action_1,
         })
         for i in range(2):
             check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
         if dones["__all__"]:
             break
+    print(env.env.step_count)
     env.close()
 
 if __name__ == "__main__":

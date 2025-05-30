@@ -546,19 +546,19 @@ class DiepIOEnvBasic(MultiAgentEnv):
             min_skill = min(tank.stats[TST.BulletPen], tank.stats[TST.BulletDamage], tank.stats[TST.Reload])
             for i in [TST.BulletPen, TST.BulletDamage, TST.Reload]:
                 if tank.stats[i] == min_skill:
-                    return i
+                    return i + 1
             if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
-                return TST.BulletSpeed
-            return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage])
+                return TST.BulletSpeed + 1
+            return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage]) + 1
 
         elif mode == 2: # body damage
             min_skill = min(tank.stats[TST.HealthRegen], tank.stats[TST.MaxHealth], tank.stats[TST.BodyDamage])
             for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
                 if tank.stats[i] == min_skill:
-                    return i
+                    return i + 1
             if min_skill == 7 and tank.stats[TST.Speed] < 5:
-                return TST.Speed
-            return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload])
+                return TST.Speed + 1
+            return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
 
         return np.random.randint(1, 9) # choose 1 ~ 8
 
