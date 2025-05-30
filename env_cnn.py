@@ -479,7 +479,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 min_distance = distance
 
         if min_distance == tank.observation_size * 10:
-            return tank.rx, tank.ry, 0
+            return 0, 0, 0
 
         return best_rx, -best_ry, 1
 
@@ -618,7 +618,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
                     self._rewards[self._agent_ids[bullet.tank.id]] += 0.1
                     if thing.type == UnitType.Tank:
-                        self._rewards[self._agent_ids[thing.id]] -= 0.1
+                        self._rewards[self._agent_ids[thing.id]] -= 0.001
 
                 max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
                 # print(max_v)
@@ -799,6 +799,9 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if skill_index > 0:
                 if tank.add_points(skill_index - 1):
                     tank.calc_stats_properties()
+                    self._rewards[agent] += 1
+                else:
+                    self._rewards[agent] -= 0.1
 
             # avoid zero-division
             if dx != 0 or dy != 0:
@@ -809,8 +812,6 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if rx != 0 or ry != 0:
                 magnitude = np.hypot(rx, ry)
                 tank.rx, tank.ry = rx / magnitude, ry / magnitude
-            else:
-                tank.rx, tank.ry = 1.0, 0.0
 
             tank.move(dx, dy)
             self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)

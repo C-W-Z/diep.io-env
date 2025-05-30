@@ -187,41 +187,60 @@ class FeatureExtractor(nn.Module):
     def __init__(self, image_shape: tuple, stats_dim: int, device):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(image_shape[2], 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Flatten(),
+            nn.Conv2d(image_shape[2], 16, kernel_size=5, stride=2),
+            nn.BatchNorm2d(16),
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2),
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.1),
+            nn.MaxPool2d(kernel_size=2, stride=2),
         )
+        self.global_pool = nn.AdaptiveAvgPool2d(2)
+        self.local_pool = nn.AdaptiveAvgPool2d(6)  # 增加到 6x6
+
         with torch.no_grad():
             dummy_input = torch.zeros(1, image_shape[2], image_shape[0], image_shape[1])
             cnn_output = self.cnn(dummy_input)
-            self.cnn_output_size = cnn_output.shape[1]
+            global_out = self.global_pool(cnn_output).flatten(start_dim=1)
+            local_out = self.local_pool(cnn_output).flatten(start_dim=1)
+            self.cnn_output_size = global_out.shape[1] + local_out.shape[1]
 
-        self.stats_fc = nn.Sequential(
-            nn.Linear(stats_dim, 128),
+        self.image_fc = nn.Sequential(
+            nn.Linear(self.cnn_output_size, 1024),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(1024, 512),
             nn.ReLU(),
         )
+        self.output_size = 512 + stats_dim
+
         self.device = device
         self.to(device)
 
     def forward(self, image, stats):
-        image = image.permute(0, 3, 1, 2).float()  # No /255.0, handled in wrapper
-        img_features = self.cnn(image)
+        image = image.permute(0, 3, 1, 2).float()
+        cnn_out = self.cnn(image)
+        global_features = self.global_pool(cnn_out).flatten(start_dim=1)
+        local_features = self.local_pool(cnn_out).flatten(start_dim=1)
+        # print(f"CNN Output: Mean {cnn_out.mean().item()}, Std {cnn_out.std().item()}")
+        # print(f"Global Features: Mean {global_features.mean().item()}, Std {global_features.std().item()}")
+        # print(f"Local Features: Mean {local_features.mean().item()}, Std {local_features.std().item()}")
+        img_features = torch.cat([global_features, local_features], dim=-1)
+        img_features = self.image_fc(img_features)
+
         stats = stats.view(stats.size(0), -1).float()
-        stats_features = self.stats_fc(stats)
-        return torch.cat([img_features, stats_features], dim=-1)
+        # print(f"Stats: Mean {stats.mean().item()}, Std {stats.std().item()}")
+
+        return torch.cat([img_features, stats], dim=-1)
 
 class Actor(nn.Module):
     def __init__(self, feature_extractor: FeatureExtractor, action_dim_d: int, action_dim_c: int, device):
         super().__init__()
         self.feature_extractor = feature_extractor
         self.fc = nn.Sequential(
-            nn.Linear(feature_extractor.cnn_output_size + 64, 256),
+            nn.Linear(feature_extractor.output_size, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
@@ -237,13 +256,14 @@ class Actor(nn.Module):
         discrete_logits = self.discrete_head(features)
         continuous_mean = torch.tanh(self.continuous_head(features))
         return discrete_logits, continuous_mean
+        # return discrete_logits, None
 
 class Critic(nn.Module):
     def __init__(self, feature_extractor: FeatureExtractor, device):
         super().__init__()
         self.feature_extractor = feature_extractor
         self.fc = nn.Sequential(
-            nn.Linear(feature_extractor.cnn_output_size + 64, 256),
+            nn.Linear(feature_extractor.output_size, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
@@ -287,6 +307,7 @@ class PPOPolicy(nn.Module):
         continuous_dist = Normal(continuous_mean, std)
         value = self.critic(image, stats)
         return discrete_dists, continuous_dist, value
+        # return discrete_dists, None, value
 
     def get_action(self, image, stats):
         image = torch.tensor(image, dtype=torch.float32).unsqueeze(0).to(self.device)
@@ -298,6 +319,7 @@ class PPOPolicy(nn.Module):
             log_prob = sum(dist.log_prob(discrete[:, i]) for i, dist in enumerate(discrete_dists))
             log_prob += continuous_dist.log_prob(continuous).sum(dim=-1)
         action = {"d": discrete.cpu().numpy()[0], "c": continuous.cpu().numpy()[0]}
+        # action = {"d": discrete.cpu().numpy()[0], "c": None}
         return action, log_prob.item(), value.item()
 
     def get_values(self, image, stats):
@@ -323,6 +345,7 @@ class PPOPolicy(nn.Module):
             new_log_prob += dist.log_prob(action_batch['d'][:, i]).unsqueeze(-1)
         new_log_prob += continuous_dist.log_prob(action_batch['c']).sum(dim=-1, keepdim=True)
         entropy = sum(dist.entropy().mean() for dist in discrete_dists) + continuous_dist.entropy().mean()
+        # entropy = sum(dist.entropy().mean() for dist in discrete_dists)
 
         ratio = torch.exp(new_log_prob - log_prob_batch)
         surr1 = ratio * advantage_batch
@@ -423,7 +446,7 @@ def train_ppo(
     gamma=0.99,
     gae_lambda=0.95,
     num_epochs=20,
-    lr=3e-4,
+    lr=1e-4,
     clip_range=0.2,
     value_coeff=0.5,
     entropy_coeff=0.01,
@@ -437,7 +460,7 @@ def train_ppo(
     # Initialize environment
     env_config = {
         "n_tanks": n_tanks,
-        "render_mode": True,  # Disable rendering to save memory
+        "render_mode": False,  # Disable rendering to save memory
         "max_steps": 4 * max_buffer_size // n_tanks,
         "resize_shape": (100, 100),
         "frame_stack_size": 4,
@@ -502,8 +525,8 @@ def train_ppo(
         while not dones["__all__"] and timestep < total_timesteps:
             actions = {}
             for agent in env.possible_agents:
-                if dones[agent]:
-                    continue
+                # if dones[agent]:
+                #     continue
                 image = obs[agent]["i"]
                 stats = obs[agent]["s"]
 
@@ -608,7 +631,7 @@ if __name__ == "__main__":
         n_tanks=1,
         total_timesteps=5000000,
         checkpoint_dir=checkpoint_dir,
-        checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint_218.pt"),
+        # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
         phase="single-agent"
     )
 
@@ -616,7 +639,7 @@ if __name__ == "__main__":
     # print("Starting multi-agent training (n_tanks=2)...")
     # train_ppo(
     #     n_tanks=2,
-    #     total_timesteps=500000,
+    #     total_timesteps=5000000,
     #     checkpoint_dir=checkpoint_dir,
     #     # checkpoint_path=os.path.join(checkpoint_dir, "single-agent_checkpoint.pt"),
     #     phase="multi-agent"
