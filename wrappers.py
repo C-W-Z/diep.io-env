@@ -32,7 +32,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
         # Stats normalization bounds
         self.stats_low = np.array([0, 1, 0] + [0] * 8)
-        self.stats_high = np.array([1, 45, 33] + [7] * 8)
+        self.stats_scale = np.array([1, 45, 33] + [7] * 8) - self.stats_low
 
         self.possible_agents = self.env.possible_agents
         self.agents = self.env.agents
@@ -49,7 +49,7 @@ class DiepIO_CNN_Wrapper(Wrapper):
         return frame
 
     def _process_stats(self, stats):
-        normalized_stats = (stats - self.stats_low) / (self.stats_high - self.stats_low)
+        normalized_stats = (stats - self.stats_low) / self.stats_scale
         return normalized_stats.astype(np.float32)[:, np.newaxis]
 
     def observation(self, observations):
@@ -126,7 +126,100 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
         return processed_obs, total_rewards, dones, truncations, infos
 
-if __name__ == "__main__":
+class DiepIO_FixedOBS_Wrapper(Wrapper):
+    def __init__(self, env: Env, frame_stack_size=4, skip_frames=4):
+        super().__init__(env)
+
+        self.frame_stack_size = frame_stack_size
+        self.skip_frames = skip_frames  # Number of frames to skip (apply same action)
+
+        self.action_space = self.env.action_space
+        self.action_spaces = self.env.action_spaces
+        self.observation_space = spaces.Box(
+            low=0,
+            high=1,
+            shape=(env.observation_space.shape[0], frame_stack_size),
+            dtype=np.float32
+        )
+        self.observation_spaces = {
+            agent: self.observation_space for agent in self.env._agent_ids
+        }
+
+        # Stats normalization bounds
+        self.obs_low = env.observation_space.low
+        self.obs_scale = env.observation_space.high - env.observation_space.low
+
+        self.possible_agents = self.env.possible_agents
+        self.agents = self.env.agents
+
+        # Buffers for each agent
+        self.frame_buffers = {agent: deque(maxlen=frame_stack_size) for agent in self.env._agent_ids}
+
+    def observation(self, observations):
+        processed_obs = {}
+        for agent, obs in observations.items():
+            # Normalize obs
+            normalized_obs = (obs - self.obs_low) / self.obs_scale
+            self.frame_buffers[agent].append(normalized_obs[:, np.newaxis])
+
+            # Stack obs
+            processed_obs[agent] = np.concatenate(self.frame_buffers[agent], axis=-1)
+
+        return processed_obs
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+
+        self.agents = self.env.agents
+
+        for agent in self.env._agent_ids:
+            # Clear buffers
+            self.frame_buffers[agent].clear()
+
+            # Initialize buffers with first obs
+            normalized_obs = (obs[agent] - self.obs_low) / self.obs_scale
+
+            for _ in range(self.frame_stack_size):
+                self.frame_buffers[agent].append(normalized_obs[:, np.newaxis])
+
+            obs[agent] = np.concatenate(self.frame_buffers[agent], axis=-1)
+
+        return obs, info
+
+    def step(self, actions):
+        total_rewards    = {agent: 0.0 for agent in self.env._agent_ids}
+        dones            = {agent: False for agent in self.env._agent_ids}
+        truncations      = {agent: False for agent in self.env._agent_ids}
+        infos            = {agent: {} for agent in self.env._agent_ids}
+        dones["__all__"] = False
+
+        for f in range(self.skip_frames):
+            obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
+
+            for agent in self.env._agent_ids:
+                if f > 0: # skill point should be use only once in skip_frames
+                    actions[agent]["d"][3] = 0
+
+                total_rewards[agent] += rewards[agent]
+                dones[agent] |= step_dones[agent]
+                truncations[agent] |= step_truncations[agent]
+                # infos[agent].update(step_infos[agent])
+
+            if step_dones["__all__"]:
+                dones["__all__"] = True
+                if f < self.skip_frames - 1:
+                    obs = {}
+                    for agent_idx, agent in enumerate(self.env._agent_ids):
+                        obs[agent] = self.env._get_obs(agent_idx)
+                break
+
+        processed_obs = self.observation(obs)
+
+        self.agents = self.env.agents
+
+        return processed_obs, total_rewards, dones, truncations, infos
+
+def test_cnn_wrapper():
     from env_cnn import DiepIOEnvBasic
     from utils import check_obs_in_space
 
@@ -159,3 +252,40 @@ if __name__ == "__main__":
         if dones["__all__"]:
             break
     env.close()
+
+def test_fixedobs_wrapper():
+    from env_new import DiepIOEnvBasic
+    from utils import check_obs_in_space
+
+    env_config = {
+        "n_tanks": 2,
+        "render_mode": True,
+        "max_steps": 1000000,
+        "unlimited_obs": False
+    }
+
+    env = DiepIOEnvBasic(env_config)
+    env = DiepIO_FixedOBS_Wrapper(env)
+
+    print(env.observation_space)
+    print(env.action_space["d"].nvec.sum(), env.action_space["c"].shape)
+
+    obs, _ = env.reset()
+
+    for i in range(2):
+        check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
+
+    while True:
+        obs, rewards, dones, truncations, infos = env.step({
+            "agent_0": env.env._get_player_input(),
+            "agent_1": env.env._get_random_input(),
+        })
+        for i in range(2):
+            check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
+
+        if dones["__all__"]:
+            break
+    env.close()
+
+if __name__ == "__main__":
+    test_fixedobs_wrapper()
