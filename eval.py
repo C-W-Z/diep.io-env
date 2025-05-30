@@ -17,7 +17,7 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_fixedobs_selfplay/PPO_diepio-v0_ff217_00000_0_2025-05-30_20-45-42/checkpoint_000040"
+checkpoint_path = "~/ray_results/diepio_fixedobs_selfplay/PPO_diepio-v0_c8bb3_00000_0_2025-05-30_22-10-04/checkpoint_000010"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
@@ -25,7 +25,7 @@ module = algo.get_module("shared_policy")
 
 # 設定 render 模式的環境
 env = DiepIOEnvBasic({
-    "n_tanks": 2,
+    "n_tanks": 1,
     "render_mode": True,
     "max_steps": 1000000,
     "unlimited_obs": False

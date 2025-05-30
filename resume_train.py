@@ -19,9 +19,9 @@ def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 env_config = {
-    "n_tanks": 2,
+    "n_tanks": 1,
     "render_mode": False,
-    "max_steps": 1000000,
+    "max_steps": 40000,
     "frame_stack_size": 1,
     "skip_frames": 4,
 }
@@ -69,7 +69,7 @@ config = (
         policies_to_train=["shared_policy"]
     )
     .training(
-        train_batch_size=256,       # ✅ 減少一次訓練的記憶體需求
+        train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
         minibatch_size=64,         # ✅ 減少分割用記憶體
         gamma=0.99,
         lr=1e-4,

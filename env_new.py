@@ -27,7 +27,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Maximum number of polygons and tanks to include in the observation
         self.obs_max_polygons = 25
-        self.obs_max_tanks = self.n_tanks - 1
+        self.obs_max_tanks = 1
         self.obs_max_bullets = 18
 
         # Agent IDs
