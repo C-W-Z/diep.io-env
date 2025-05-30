@@ -974,7 +974,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self.step_count += 1
         if (self.step_count >= self.max_steps or
             sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or
-            sum(self._dones[agent] for agent in self._agent_ids) == self.n_tanks):
+            any(self._dones.values())):
             self._dones = {agent: True for agent in self._agent_ids}
             self._dones["__all__"] = True
 

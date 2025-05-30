@@ -2,12 +2,11 @@ import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 from env_new import DiepIOEnvBasic
-from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIO_FixedOBS_Wrapper(env_config)
+    return DiepIOEnvBasic(env_config)
 
 register_env("diepio-v0", env_creator)
 
@@ -22,8 +21,8 @@ env_config = {
     "n_tanks": 2,
     "render_mode": False,
     "max_steps": 1000000,
-    "frame_stack_size": 4,
-    "skip_frames": 4,
+    # "frame_stack_size": 4,
+    # "skip_frames": 4,
 }
 
 # Get observation and action spaces
@@ -72,8 +71,15 @@ config = (
         train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
         minibatch_size=128,         # ✅ 減少分割用記憶體
         gamma=0.99,
-        lr=5e-4,
-        model={"fcnet_hiddens": [256, 256]}
+        lr=1e-4,
+        model={
+            # "fcnet_hiddens": [512, 512, 256],  # Deeper and wider network
+            "fcnet_activation": "tanh",
+            "use_lstm": True,
+            "fcnet_hiddens": [256, 256],
+            "lstm_cell_size": 256,
+            "max_seq_len": 16,
+        }
     )
 )
 

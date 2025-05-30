@@ -130,6 +130,8 @@ class DiepIO_CNN_Wrapper(Wrapper):
 
 class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
     def __init__(self, env_config: dict[str, Any] = {}):
+        super(DiepIO_FixedOBS_Wrapper, self).__init__()
+
         from env_new import DiepIOEnvBasic
 
         self.env = DiepIOEnvBasic(env_config)
@@ -153,6 +155,7 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         self.obs_low = self.env.observation_space.low
         self.obs_scale = self.env.observation_space.high - self.env.observation_space.low
 
+        self._agent_ids = self.env._agent_ids
         self.possible_agents = self.env.possible_agents
         self.agents = self.env.agents
 
@@ -223,9 +226,9 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
 
         return processed_obs, total_rewards, dones, truncations, infos
 
-    def __getattr__(self, name):
-        # Delegate any undefined attributes to the base environment
-        return getattr(self.env, name)
+    def close(self):
+        self.env.close()
+        return super().close()
 
 def test_cnn_wrapper():
     from env_cnn import DiepIOEnvBasic
@@ -266,7 +269,7 @@ def test_fixedobs_wrapper():
 
     env_config = {
         "n_tanks": 2,
-        "render_mode": False,
+        "render_mode": True,
         "max_steps": 1000000,
         "frame_stack_size": 4,
         "skip_frames": 4,
