@@ -9,7 +9,7 @@ env = DiepIO_FixedOBS_Wrapper({
     "n_tanks": 2,
     "render_mode": False,
     "max_steps": 1000000,
-    "frame_stack_size": 4,
+    "frame_stack_size": 1,
     "skip_frames": 4,
 })
 check_multiagent_environments(env)

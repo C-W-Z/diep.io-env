@@ -103,18 +103,15 @@ class DiepIO_CNN_Wrapper(Wrapper):
         dones["__all__"] = False
 
         for f in range(self.skip_frames):
-            obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
+            obs, rewards, dones, truncations, infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
 
             for agent in self.env._agent_ids:
                 if f > 0: # skill point should be use only once in skip_frames
                     actions[agent]["d"][3] = 0
 
                 total_rewards[agent] += rewards[agent]
-                dones[agent] |= step_dones[agent]
-                truncations[agent] |= step_truncations[agent]
-                # infos[agent].update(step_infos[agent])
 
-            if step_dones["__all__"]:
+            if dones["__all__"]:
                 dones["__all__"] = True
                 if f < self.skip_frames - 1:
                     obs = {}
@@ -145,7 +142,9 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
             "d": spaces.MultiDiscrete([3, 3]),                             # discrete
             "c": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
         })
-        self.action_spaces = self.env.action_spaces
+        self.action_spaces =  {
+            agent: self.action_space for agent in self.env._agent_ids
+        }
 
         self.observation_space = spaces.Box(
             low=0,
@@ -183,8 +182,8 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
 
         return processed_obs
 
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
+    def reset(self, *, seed=None, options=None):
+        obs, info = self.env.reset(seed=None, options=None)
 
         # self.agents = self.env.agents
 
@@ -211,25 +210,22 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         truncations      = {agent: False for agent in self.env._agent_ids}
         infos            = {agent: {} for agent in self.env._agent_ids}
         dones["__all__"] = False
+        truncations["__all__"] = False
 
         for i, agent in enumerate(self.env._agent_ids):
             skill_index = self.env._auto_choose_skill(agent, mode=self.skill_mode[i])
             actions[agent]["d"] = np.concatenate((actions[agent]["d"], np.array([1, skill_index])))
 
         for f in range(self.skip_frames):
-            obs, rewards, step_dones, step_truncations, step_infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
+            obs, rewards, dones, truncations, infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
 
             for agent in self.env._agent_ids:
                 if f > 0: # skill point should be use only once in skip_frames
                     actions[agent]["d"][3] = 0
 
                 total_rewards[agent] += rewards[agent]
-                dones[agent] |= step_dones[agent]
-                truncations[agent] |= step_truncations[agent]
-                # infos[agent].update(step_infos[agent])
 
-            if step_dones["__all__"]:
-                dones["__all__"] = True
+            if dones["__all__"]:
                 if f < self.skip_frames - 1:
                     obs = {}
                     for agent_idx, agent in enumerate(self.env._agent_ids):

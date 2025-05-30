@@ -883,6 +883,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
         self._rewards = {agent: 0.0 for agent in self._agent_ids}
         observations = {}
         truncations = {agent: False for agent in self._agent_ids}
+        truncations["__all__"] = False
 
         assert len(actions) == self.n_tanks, f"{self.n_tanks}, {actions}"
 
@@ -982,7 +983,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 self._dones[agent] = True
 
             if tank.alive and self.no_reward_frames[agent_idx] > 30 * cfg.FPS:
-                self._dones[agent] = True
+                truncations[agent] = True
 
             elif self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
                 self._rewards[agent] -= 0.01
@@ -998,11 +999,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 observations[agent] = self._get_obs(agent_idx)
 
         self.step_count += 1
-        if (self.step_count >= self.max_steps or
-            sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or
-            any(self._dones.values())):
+        if sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or any(self._dones.values()):
             self._dones = {agent: True for agent in self._agent_ids}
             self._dones["__all__"] = True
+
+        if self.step_count >= self.max_steps or any(truncations.values()):
+            truncations = {agent: True for agent in self._agent_ids}
+            truncations["__all__"] = True
 
         if self.render_mode:
             self.render()
