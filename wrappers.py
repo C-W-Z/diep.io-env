@@ -174,7 +174,7 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
 
-        self.agents = self.env.agents
+        # self.agents = self.env.agents
 
         for agent in self.env._agent_ids:
             # Clear buffers
@@ -219,7 +219,7 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
 
         processed_obs = self.observation(obs)
 
-        self.agents = self.env.agents
+        # self.agents = self.env.agents
 
         return processed_obs, total_rewards, dones, truncations, infos
 

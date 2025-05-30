@@ -32,7 +32,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Agent IDs
         self._agent_ids = [f"agent_{i}" for i in range(self.n_tanks)]
-        self.possible_agents = self._agent_ids
+        self.agents = self.possible_agents = self._agent_ids
 
         # Observation space (per agent)
         # === Part 1: Self state ===
@@ -100,8 +100,6 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
     def reset(self, *, seed=None, options=None) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, Any]]:
         Unit.reset_id_iter()
-
-        self.agents = self.possible_agents
 
         self.step_count = 0
 
@@ -956,12 +954,13 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 tank.calc_respawn_score()
                 self._rewards[agent] -= 10
                 self._dones[agent] = True
-                self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
+
             if tank.alive and self.no_reward_frames[agent_idx] > 30 * cfg.FPS:
                 self._dones[agent] = True
-                self.agents = [f"agent_{i}" for i in range(self.n_tanks) if self.tanks[i].alive]
+
             elif self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
                 self._rewards[agent] -= 0.01
+
             if self._rewards[agent] > 0:
                 self.no_reward_frames[agent_idx] = 0
             else:
