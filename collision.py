@@ -1,5 +1,6 @@
 # Spatial hashing for collision detection
 import numpy as np
+from numba import njit
 
 # Tanks and polygons go in here, no bullets please
 class CollisionHash:

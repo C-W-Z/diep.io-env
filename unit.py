@@ -97,7 +97,7 @@ class Unit:
         max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
         self.x, self.y, self.vx, self.vy, self.ax, self.ay, self.collision_vx, self.collision_vy, \
         self.collision_frame, self.recoil_vx, self.recoil_vy = move_unit(
-            self.x, self.y, dx, dy, self.vx, self.vy, self.ax, self.ay, self.radius, self.v_scale,
+            self.x, self.y, dx, dy, self.vx, self.vy, self.ax, self.ay, self.radius,
             self.collision_vx, self.collision_vy, self.collision_frame, self.max_collision_frame,
             self.recoil_vx, self.recoil_vy, max_v, cfg.BASE_ACC_FRAMES, cfg.BASE_DEC_FRAMES,
             cfg.TANK_RECOIL_V_SCALE if self.type == UnitType.Tank else 0.0,
@@ -105,7 +105,7 @@ class Unit:
         )
 
 @njit
-def move_unit(x, y, dx, dy, vx, vy, ax, ay, radius, v_scale, collision_vx, collision_vy,
+def move_unit(x, y, dx, dy, vx, vy, ax, ay, radius, collision_vx, collision_vy,
               collision_frame, max_collision_frame, recoil_vx, recoil_vy, max_v, base_acc_frames,
               base_dec_frames, tank_recoil_v_scale, tank_recoil_decay, map_size):
     # Handle normal motion
@@ -140,13 +140,13 @@ def move_unit(x, y, dx, dy, vx, vy, ax, ay, radius, v_scale, collision_vx, colli
         collision_frame, collision_vx, collision_vy = 0, 0.0, 0.0
 
     # Recoil (simplified for Tank)
-    recoil_vx = recoil_vx * tank_recoil_v_scale
-    recoil_vy = recoil_vy * tank_recoil_v_scale
+    _recoil_vx = recoil_vx * tank_recoil_v_scale
+    _recoil_vy = recoil_vy * tank_recoil_v_scale
     recoil_vx *= tank_recoil_decay
     recoil_vy *= tank_recoil_decay
 
-    total_vx = vx + collision_vx + recoil_vx
-    total_vy = vy + collision_vy + recoil_vy
+    total_vx = vx + collision_vx + _recoil_vx
+    total_vy = vy + collision_vy + _recoil_vy
 
     x += total_vx
     y += total_vy
