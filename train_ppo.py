@@ -74,14 +74,16 @@ config = (
         minibatch_size=64,          # ✅ 減少分割用記憶體
         gamma=0.99,
         lr=1e-4,
+        entropy_coeff=0.01,
+        vf_loss_coeff=0.1,
         model={
             # "fcnet_hiddens": [512, 512, 256],  # Deeper and wider network
             "fcnet_activation": "tanh",
             "use_lstm": True,
-            "fcnet_hiddens": [256, 128],
-            "lstm_cell_size": 128,
+            "fcnet_hiddens": [512, 256],
+            "lstm_cell_size": 256,
             "max_seq_len": 16,
-        }
+        },
     )
 )
 
