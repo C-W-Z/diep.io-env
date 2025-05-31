@@ -1,6 +1,7 @@
 import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.algorithms.dqn import DQNConfig
 from env_body import DiepIOEnvBody
 from ray.tune.registry import register_env
 
@@ -34,9 +35,9 @@ temp_env.close()
 print("Observation space:", obs_space)
 print("Action space:", act_space)
 
-# Configure PPO
+# Configure
 config = (
-    PPOConfig()
+    DQNConfig()
     .api_stack(
         enable_rl_module_and_learner=True,
         enable_env_runner_and_connector_v2=True
@@ -62,32 +63,27 @@ config = (
         num_gpus_per_learner=0.0,
         num_cpus_per_learner=1
     )
-    .multi_agent(
-        policies={"body_policy": (None, obs_space, act_space, {})},
-        policy_mapping_fn=policy_mapping_fn,
-        policies_to_train=["body_policy"]
-    )
     .training(
-        train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
-        minibatch_size=64,          # ✅ 減少分割用記憶體
+        train_batch_size=64,       # ✅ 減少一次訓練的記憶體需求
         gamma=0.99,
-        lr=5e-5,
-        entropy_coeff=0.05,
-        vf_loss_coeff=0.75,
+        lr=5e-4,
+        num_atoms=51,
+        v_min=-30,
+        v_max=300,
+        n_step=5,
         model={
-            "fcnet_activation": "tanh",
-            "use_lstm": True,
             "fcnet_hiddens": [256, 256],
+            # "fcnet_activation": "tanh",
+            "use_lstm": True,
             "lstm_cell_size": 256,
-            "max_seq_len": 20,
-            "post_fcnet_hiddens": [128]
-        },
+            "max_seq_len": 20
+        }
     )
 )
 
 # Start training
 tuner = tune.Tuner(
-    "PPO",
+    "DQN",
     param_space=config.to_dict(),
     run_config=tune.RunConfig(
         stop={"training_iteration": 1000000},

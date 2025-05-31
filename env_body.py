@@ -1,6 +1,6 @@
-from ray.rllib.env import MultiAgentEnv
+# from ray.rllib.env import BaseEnv
 import numpy as np
-from gymnasium import spaces
+from gymnasium import spaces, Env
 import pygame
 import sys
 from typing import Union, Any
@@ -13,34 +13,30 @@ from collision import CollisionHash
 from bullet import Bullet, BulletPool
 from utils import check_obs_in_space, draw_rectangle
 
-class DiepIOEnvBody(MultiAgentEnv):
+class DiepIOEnvBody(Env):
     metadata = {"name": "diepio_v0"}
 
     def __init__(self, env_config: dict[str, Any] = {}):
         super(DiepIOEnvBody, self).__init__()
         self.n_tanks = 1
         # self.n_polygons = int(np.floor(self.n_tanks * cfg.N_POLYGON_SCALE))
-        self.n_polygons = 25
+        self.n_polygons = 12
         self.render_mode = env_config.get("render_mode", False)
-        self.max_steps = env_config.get("max_steps", 1000000)
+        self.max_steps = env_config.get("max_steps", 10000)
         self.skip_frames = env_config.get("skip_frames", 1)
         self.skip_frames_counter = 0
 
         # Maximum number of polygons and tanks to include in the observation
-        self.obs_max_polygons = 25
+        self.obs_max_polygons = 12
 
-        # Agent IDs
-        self._agent_ids = [f"agent_{i}" for i in range(self.n_tanks)]
-        self.agents = self.possible_agents = self._agent_ids
-
-        # Observation space (per agent)
+        # Observation space
         # === Part 1: Self state ===
         low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,  1.0] + [0] * 8
         high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 45.0] + [7] * 8
 
         # === Part 2: Polygons ===
         polygon_low  = [-1.0, -1.0,    0.0, 0.9, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
-        polygon_high = [ 1.0,  1.0, 113.14, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
+        polygon_high = [ 1.0,  1.0, 56.57, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
         # === Padding sizes ===
@@ -54,7 +50,7 @@ class DiepIOEnvBody(MultiAgentEnv):
             dtype=np.float32
         )
 
-        # Action space (per agent)
+        # Action space
         self.action_space = spaces.Discrete(9)
 
         self.action_map = {
@@ -67,15 +63,6 @@ class DiepIOEnvBody(MultiAgentEnv):
             6: [1, 1],  # W+D
             7: [-1, -1],# S+A
             8: [1, -1]  # S+D
-        }
-
-        # Create agent space dicts for RLlib multi-agent API compatibility
-
-        self.observation_spaces = {
-            agent: self.observation_space for agent in self._agent_ids
-        }
-        self.action_spaces = {
-            agent: self.action_space for agent in self._agent_ids
         }
 
         # Initialize rendering
@@ -118,8 +105,8 @@ class DiepIOEnvBody(MultiAgentEnv):
             for _ in range(self.n_polygons)
         ]
 
-        self.prev_tanks_score = [tank.score for tank in self.tanks]
-        self.no_reward_frames = [0 for _ in self.tanks]
+        self.prev_tanks_score = 0
+        self.no_reward_frames = 0
         self.last_min_poly_distance = 120
 
         # add all objects to the map
@@ -135,17 +122,18 @@ class DiepIOEnvBody(MultiAgentEnv):
             self.colhash.add(poly.x, poly.y, poly.id)
 
         # Initialize RLlib dictionaries
-        self._dones = {agent: False for agent in self._agent_ids}
-        self._dones["__all__"] = False
-        self._infos = {agent: {} for agent in self._agent_ids}
+        self._dones = False
+        self._infos = {}
 
-        observations = {agent: self._get_obs(i) for i, agent in enumerate(self._agent_ids)}
+        observations = self._get_obs()
         if self.render_mode:
             self.render()
         return observations, self._infos
 
-    def _get_obs(self, agent_id):
-        agent: Tank = self.tanks[agent_id]
+    def _get_obs(self):
+        # return pygame.surfarray.array3d(self._get_frame(for_render=False))
+
+        agent: Tank = self.tanks[0]
 
         # 1. Player's own state
         obs = [
@@ -288,13 +276,13 @@ class DiepIOEnvBody(MultiAgentEnv):
 
             self.skill_buttons.append((btn, i))
 
-    def _get_frame(self, agent_id, for_render=False):
+    def _get_frame(self, for_render=False):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
         surface = pygame.Surface((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
         surface.fill("#eeeeee")  # White background
 
         # Center on the agent
-        agent = self.tanks[agent_id]
+        agent = self.tanks[0]
         center_x, center_y = agent.x, agent.y
         observation_size = agent.observation_size
 
@@ -446,7 +434,7 @@ class DiepIOEnvBody(MultiAgentEnv):
             )
 
             # Draw body
-            color = (0, 127, 255) if unit.id == agent_id else (255, 0, 0)
+            color = (0, 127, 255) if unit.id == agent.id else (255, 0, 0)
             if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                 color = (255, 255, 255)
             pygame.draw.circle(
@@ -496,41 +484,43 @@ class DiepIOEnvBody(MultiAgentEnv):
             # Render skill panel for agent 0
             self.skill_buttons = []  # Clear previous buttons
             scale = cfg.SCREEN_SIZE / 800
-            self._render_skill_panel(self.tanks[agent_id], surface, 10 * scale, cfg.SCREEN_SIZE - 260 * scale)  # Left-bottom position
+            self._render_skill_panel(self.tanks[0], surface, 10 * scale, cfg.SCREEN_SIZE - 260 * scale)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
         # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
         # return obs_array
 
-    def _auto_choose_skill(self, agent: str, mode=0):
-        tank: Tank = self.tanks[int(agent.split("_")[1])]
+    def _auto_choose_skill(self, mode=0):
+        tank: Tank = self.tanks[0]
 
         if tank.skill_points == 0:
             return 0
 
         if mode == 1: # bullet shoot
             min_skill = min(tank.stats[TST.BulletPen], tank.stats[TST.BulletDamage], tank.stats[TST.Reload])
+            if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
+                return TST.BulletSpeed + 1
+            if min_skill == 7 and tank.stats[TST.BulletSpeed] >= 5:
+                return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage]) + 1
             for i in [TST.BulletPen, TST.BulletDamage, TST.Reload]:
                 if tank.stats[i] == min_skill:
                     return i + 1
-            if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
-                return TST.BulletSpeed + 1
-            return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage]) + 1
 
         elif mode == 2: # body damage
             min_skill = min(tank.stats[TST.HealthRegen], tank.stats[TST.MaxHealth], tank.stats[TST.BodyDamage])
+            if min_skill == 7 and tank.stats[TST.Speed] < 5:
+                return TST.Speed + 1
+            if min_skill == 7 and tank.stats[TST.Speed] >= 5:
+                return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
             for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
                 if tank.stats[i] == min_skill:
                     return i + 1
-            if min_skill == 7 and tank.stats[TST.Speed] < 5:
-                return TST.Speed + 1
-            return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
 
         return np.random.randint(1, 9) # choose 1 ~ 8
 
-    def _auto_shoot(self, agent: str):
-        tank: Tank = self.tanks[int(agent.split("_")[1])]
+    def _auto_shoot(self):
+        tank: Tank = self.tanks[0]
         self_x, self_y = tank.x, tank.y
 
         min_x = tank.x - tank.observation_size / 2
@@ -717,9 +707,7 @@ class DiepIOEnvBody(MultiAgentEnv):
                     thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
-                    self._rewards[self._agent_ids[bullet.tank.id]] += 0.1
-                    if thing.type == UnitType.Tank:
-                        self._rewards[self._agent_ids[thing.id]] -= 0.001
+                    self._rewards += 0.1
 
                 max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
                 # print(max_v)
@@ -823,7 +811,7 @@ class DiepIOEnvBody(MultiAgentEnv):
             poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
             if tank.hp > 25:
-                self._rewards[self._agent_ids[tank.id]] += 0.1
+                self._rewards += 0.1
 
             if tank.last_collider_id == poly.id:
                 tank.same_collider_counter += 1
@@ -873,32 +861,26 @@ class DiepIOEnvBody(MultiAgentEnv):
         dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
     ]:
         self.step_count += 1
-        self._rewards = {agent: 0.0 for agent in self._agent_ids}
-        observations = {}
-        truncations = {agent: False for agent in self._agent_ids}
-        truncations["__all__"] = False
-
-        assert len(actions) == self.n_tanks, f"{self.n_tanks}, {actions}"
+        self._rewards = 0.0
+        observations = None
+        truncations = False
 
         # Process actions for each agent
-        for agent, action in actions.items():
-            agent_idx = int(agent.split("_")[1])
-            tank = self.tanks[agent_idx]
-            if not tank.alive or self._dones[agent]:
-                continue
+        tank = self.tanks[0]
+        if tank.alive and not self._dones:
 
             tank.regen_health()
             tank.update_counter()
 
-            dx, dy = self.action_map[int(action)]
-            skill_index = self._auto_choose_skill(agent, mode=2)
+            dx, dy = self.action_map[int(actions)]
+            skill_index = self._auto_choose_skill(mode=2)
 
             # invalid move reward
             if (dx < 0 and tank.x <= tank.radius + 1e-6 or
                 dx > 0 and tank.x >= cfg.MAP_SIZE - tank.radius - 1e-6 or
                 dy < 0 and tank.y <= tank.radius + 1e-6 or
                 dy > 0 and tank.y >= cfg.MAP_SIZE - tank.radius - 1e-6):
-                self._rewards[agent] -= 0.001
+                self._rewards -= 0.01
 
             old_x, old_y = tank.x, tank.y
 
@@ -906,9 +888,9 @@ class DiepIOEnvBody(MultiAgentEnv):
             if skill_index > 0:
                 if tank.add_points(skill_index - 1):
                     tank.calc_stats_properties()
-                    self._rewards[agent] += 1
+                    self._rewards += 1
                 else:
-                    self._rewards[agent] -= 0.01
+                    self._rewards -= 0.002
 
             # avoid zero-division
             if dx != 0 or dy != 0:
@@ -960,7 +942,7 @@ class DiepIOEnvBody(MultiAgentEnv):
 
         if min_poly_alive:
             if min_distance < self.last_min_poly_distance:
-                self._rewards[self._agent_ids[0]] += (120 - min_distance) * 0.0001
+                self._rewards += (120 - min_distance) * 0.0001
             self.last_min_poly_distance = min_distance
         else:
             self.last_min_poly_distance = 120
@@ -978,34 +960,32 @@ class DiepIOEnvBody(MultiAgentEnv):
         self._handle_collisions()
 
         # Compute rewards and observations
-        for agent in self._agent_ids:
-            agent_idx = int(agent.split("_")[1])
-            tank = self.tanks[agent_idx]
-            if not self._dones[agent] and not tank.alive:
-                tank.hp = 0
-                # tank.calc_respawn_score()
-                self._rewards[agent] -= 10
-                self._dones[agent] = True
 
-            self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
-            self.prev_tanks_score[agent_idx] = tank.score
+        tank = self.tanks[0]
+        if not self._dones and not tank.alive:
+            tank.hp = 0
+            # tank.calc_respawn_score()
+            self._rewards -= 10
+            self._dones = True
 
-            if self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
-                self._rewards[agent] -= 0.01
+        self._rewards += np.clip(tank.score - self.prev_tanks_score, -500, 500) * 0.1
+        self.prev_tanks_score = tank.score
 
-            if self._rewards[agent] > 0:
-                self.no_reward_frames[agent_idx] = 0
-            else:
-                self.no_reward_frames[agent_idx] += 1
+        if self.no_reward_frames > 10 * cfg.FPS:
+            self._rewards -= 0.002
 
-            if skip_frame:
-                observations[agent] = {}
-            else:
-                observations[agent] = self._get_obs(agent_idx)
+        if self._rewards > 0:
+            self.no_reward_frames = 0
+        else:
+            self.no_reward_frames += 1
 
-        if self.step_count >= self.max_steps or sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or any(self._dones.values()):
-            self._dones = {agent: True for agent in self._agent_ids}
-            self._dones["__all__"] = True
+        if skip_frame:
+            observations = None
+        else:
+            observations = self._get_obs()
+
+        if self.step_count >= self.max_steps or sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1:
+            self._dones = True
 
         if self.render_mode:
             self.render()
@@ -1031,7 +1011,7 @@ class DiepIOEnvBody(MultiAgentEnv):
         for i in range(self.n_tanks):
             # Render only agent 0's perspective
             # if self.tanks[0].alive:
-            surface = self._get_frame(i, for_render=True)
+            surface = self._get_frame(for_render=True)
             # self.screen.blit(surface, (0, 0))
             self.screen.blit(surface, (cfg.SCREEN_SIZE * i, 0))
 
@@ -1047,7 +1027,7 @@ if __name__ == "__main__":
     env_config = {
         "n_tanks": 1,
         "render_mode": "human",
-        "max_steps": 1000000,
+        "max_steps": 5000,
     }
 
     env = DiepIOEnvBody(env_config)
@@ -1055,18 +1035,20 @@ if __name__ == "__main__":
     obs, _ = env.reset()
     print(env.observation_space)
     print(env.action_space)
-    for i in range(env.n_tanks):
-        check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
+    check_obs_in_space(obs, env.observation_space)
+
+    total_rewards = 0
 
     while True:
         action_0 = env._get_player_input()
 
-        obs, rewards, dones, truncations, infos = env.step({
-            "agent_0": action_0,
-        })
-        for i in range(env.n_tanks):
-            check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
+        obs, rewards, dones, truncations, infos = env.step(action_0)
+        check_obs_in_space(obs, env.observation_space)
 
-        if dones["__all__"]:
+        total_rewards += rewards
+
+        if dones:
             break
     env.close()
+
+    print(total_rewards)
