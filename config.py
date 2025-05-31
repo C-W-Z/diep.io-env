@@ -6,7 +6,7 @@ class Config:
     FPS                             = 60
     SCREEN_SIZE                     = 400      # Pixel size of render window
     MAP_SIZE                        = 80
-    BORDER_SIZE                     = 0
+    BORDER_SIZE                     = 5
     MAP_GRID                        = 32        # Size of collision grid
     BASE_MAX_VELOCITY               = 10 / FPS  # 10 grids per second
     BASE_ACC_FRAMES                 = 10        # Acceleration
@@ -43,8 +43,8 @@ class Config:
     POLYGON_HP                      = {3: 30 , 4: 10 , 5: 100}
     POLYGON_BODY_DAMAGE             = {3: 8.0, 4: 8.0, 5: 12.0}
     POLYGON_SCORE                   = {3: 25 , 4: 10 , 5: 130}
-    POLYGON_V_SCALE                 = 0.1
-    POLYGON_ROTATE_SPEED            = 0.005
+    POLYGON_V_SCALE                 = 0.05
+    POLYGON_ROTATE_SPEED            = 0.001
 
     BASE_BULLET_V_SCALE             = 2.0
     MIN_BULLET_V_MULTIPLIER         = 0.5

@@ -26,17 +26,20 @@ class DiepIOEnvBody(Env):
         self.skip_frames = env_config.get("skip_frames", 1)
         self.skip_frames_counter = 0
 
+        self.map_size = 40
+        self.screen_size = 400
+
         # Maximum number of polygons and tanks to include in the observation
-        self.obs_max_polygons = 12
+        self.obs_max_polygons = 3
 
         # Observation space
         # === Part 1: Self state ===
-        low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,  1.0] + [0] * 8
-        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 45.0] + [7] * 8
+        low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,   0.0] + [0] * 8
+        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 278.0] + [7] * 8
 
         # === Part 2: Polygons ===
-        polygon_low  = [-1.0, -1.0,    0.0, 0.9, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
-        polygon_high = [ 1.0,  1.0, 56.57, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
+        polygon_low  = [-1.0, -1.0,                               0.0, 0.9, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
+        polygon_high = [ 1.0,  1.0, np.sqrt(2) * self.map_size + 1e-6, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
         # === Padding sizes ===
@@ -68,7 +71,7 @@ class DiepIOEnvBody(Env):
         # Initialize rendering
         if self.render_mode:
             pygame.init()
-            self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE * self.n_tanks, cfg.SCREEN_SIZE))
+            self.screen = pygame.display.set_mode((self.screen_size * self.n_tanks, self.screen_size))
             self.clock = pygame.time.Clock()
 
         self.reset()
@@ -86,20 +89,20 @@ class DiepIOEnvBody(Env):
         self.all_things: dict[int, Union[Tank, Polygon, Bullet]] = {}
 
         # Collision registry
-        self.colhash = CollisionHash(cfg.MAP_SIZE, cfg.MAP_GRID)
+        self.colhash = CollisionHash(self.map_size, self.map_size * 4 // 10)
 
         self.tanks = [
             Tank(
-                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
-                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, self.map_size-cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, self.map_size-cfg.BORDER_SIZE),
                 score=0,
             )
             for _ in range(self.n_tanks)
         ]
         self.polygons = [
             Polygon(
-                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
-                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
                 side=self._rand_poly_side()
             )
             for _ in range(self.n_polygons)
@@ -107,7 +110,6 @@ class DiepIOEnvBody(Env):
 
         self.prev_tanks_score = 0
         self.no_reward_frames = 0
-        self.last_min_poly_distance = 120
 
         # add all objects to the map
         # add all objects to the collision registry
@@ -137,12 +139,13 @@ class DiepIOEnvBody(Env):
 
         # 1. Player's own state
         obs = [
-            agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE, # Position [0.0, 1.0]
+            agent.x / self.map_size, agent.y / self.map_size, # Position [0.0, 1.0]
             agent.radius,                                   # [0.5, 1.6]
             agent.total_vx, agent.total_vy,                 # Velocity [-1.0, 1.0]
             # agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
             agent.hp / agent.max_hp,                        # Normalized health [0.0, 1.0]
-            agent.level,                                    # Player level [1, 45]
+            agent.hp,                                       # raw HP [0.0, 278.0]
+            # agent.level,                                    # Player level [1, 45]
             # agent.skill_points,                             # Available skill points [0, 33]
             # Tank stats [0, 7]
             agent.stats[TST.HealthRegen],                   # Health regeneration level
@@ -162,33 +165,40 @@ class DiepIOEnvBody(Env):
         # min_y = agent.y - observation_size / 2
         # max_y = agent.y + observation_size / 2
 
-        # 2. Nearby polygons in the screen
-        polygon_obs = np.zeros((self.obs_max_polygons, self.polygon_features), dtype=np.float32)
-        for i, obj in enumerate(self.polygons):
-            # if not obj.alive:
-            #     continue
+        # 2. Collect and sort polygons by distance
+        polygon_data = []
+        for obj in self.polygons:
+            if not obj.alive:
+                continue
             dx, dy = obj.x - agent.x, obj.y - agent.y
-            # Check if the polygon is in the screen
-            # if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
-            side_one_hot = [0, 0, 0]        # type of sides [0, 1]
-            side_one_hot[obj.side - 3] = 1  # obj.side is in [3, 4, 5]
-
             distance = np.hypot(dx, dy)
-            if distance > 0:
-                dx, dy = dx / distance, dy / distance
+            side_one_hot = [0, 0, 0]
+            side_one_hot[obj.side - 3] = 1
+            features = [
+                np.float32(dx / max(distance, 1e-6)),  # Avoid division by zero
+                np.float32(dy / max(distance, 1e-6)),
+                np.float32(distance),
+                np.float32(obj.radius),
+                np.float32(obj.total_vx),
+                np.float32(obj.total_vy),
+                np.float32(obj.hp / obj.max_hp),
+            ] + side_one_hot
+            polygon_data.append((distance, features))
 
-            polygon_obs[i, :] = np.array([
-                dx, dy,                     # direction [-1.0, 1.0]
-                distance,                   # distance [0, sqrt(2x80^2)]
-                obj.radius,                 # [0.5, 1.6]
-                obj.total_vx, obj.total_vy, # [-1.0, 1.0]
-                obj.hp / obj.max_hp,        # Normalized health [0.0, 1.0]
-            ] + side_one_hot, dtype=np.float32)
+        # Sort by distance and select top k
+        polygon_data.sort(key=lambda x: x[0])  # Sort by distance
+        selected_polygons = polygon_data[:self.obs_max_polygons]  # Take top k
 
+        # 3. Create polygon observation array
+        polygon_obs = np.zeros((self.obs_max_polygons, self.polygon_features), dtype=np.float32)
+        for i, (_, features) in enumerate(selected_polygons):
+            polygon_obs[i, :] = np.array(features, dtype=np.float32)
+
+        # 4. Combine observations
         return np.concatenate([obs, polygon_obs.flatten()], dtype=np.float32)
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
-        scale = cfg.SCREEN_SIZE / 800
+        scale = self.screen_size / 800
 
         # 1. prepare fonts and dynamic header sizes
         font = pygame.font.Font(None, int(24 * scale))
@@ -216,7 +226,7 @@ class DiepIOEnvBody(Env):
         panel_height = header_height + len(skills) * line_height + progress_bar_h + bottom_padding
 
         # if panel would go off-screen, shift it up
-        screen_h = cfg.SCREEN_SIZE
+        screen_h = self.screen_size
         if offset_y + panel_height > screen_h:
             offset_y = max(0, screen_h - panel_height)
 
@@ -278,7 +288,7 @@ class DiepIOEnvBody(Env):
 
     def _get_frame(self, for_render=False):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
-        surface = pygame.Surface((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
+        surface = pygame.Surface((self.screen_size, self.screen_size))
         surface.fill("#eeeeee")  # White background
 
         # Center on the agent
@@ -287,51 +297,51 @@ class DiepIOEnvBody(Env):
         observation_size = agent.observation_size
 
         # Calculate scale: SCREEN_SIZE pixels cover observation_size map units
-        grid_size = cfg.SCREEN_SIZE / observation_size  # e.g., 1000 / 40 = 25
-        screen_half = cfg.SCREEN_SIZE // 2  # 500
+        grid_size = self.screen_size / observation_size  # e.g., 1000 / 40 = 25
+        screen_half = self.screen_size // 2  # 500
 
         # Draw black rectangles for areas outside map boundaries
         left_boundary = int(screen_half + (cfg.BORDER_SIZE - center_x) * grid_size)  # x = BOARDER_SIZE
-        right_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BORDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
+        right_boundary = int(screen_half + (self.map_size - cfg.BORDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
         top_boundary = int(screen_half + (cfg.BORDER_SIZE - center_y) * grid_size)  # y = BOARDER_SIZE
-        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BORDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
+        bottom_boundary = int(screen_half + (self.map_size - cfg.BORDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
 
         black_color = (191, 191, 191)
         if left_boundary > 0:
-            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, cfg.SCREEN_SIZE))
-        if right_boundary < cfg.SCREEN_SIZE:
-            pygame.draw.rect(surface, black_color, (right_boundary, 0, cfg.SCREEN_SIZE - right_boundary, cfg.SCREEN_SIZE))
+            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, self.screen_size))
+        if right_boundary < self.screen_size:
+            pygame.draw.rect(surface, black_color, (right_boundary, 0, self.screen_size - right_boundary, self.screen_size))
         if top_boundary > 0:
-            pygame.draw.rect(surface, black_color, (0, 0, cfg.SCREEN_SIZE, top_boundary))
-        if bottom_boundary < cfg.SCREEN_SIZE:
-            pygame.draw.rect(surface, black_color, (0, bottom_boundary, cfg.SCREEN_SIZE, cfg.SCREEN_SIZE - bottom_boundary))
+            pygame.draw.rect(surface, black_color, (0, 0, self.screen_size, top_boundary))
+        if bottom_boundary < self.screen_size:
+            pygame.draw.rect(surface, black_color, (0, bottom_boundary, self.screen_size, self.screen_size - bottom_boundary))
 
         # Draw grid lines (spacing = 1 map units)
         if for_render:
             grid_color = (150, 150, 150)  # Light gray
             # Calculate visible grid lines
             min_x = max(0, center_x - observation_size / 2)
-            max_x = min(cfg.MAP_SIZE, center_x + observation_size / 2)
+            max_x = min(self.map_size, center_x + observation_size / 2)
             min_y = max(0, center_y - observation_size / 2)
-            max_y = min(cfg.MAP_SIZE, center_y + observation_size / 2)
+            max_y = min(self.map_size, center_y + observation_size / 2)
             # Grid line positions
             x_grid = np.arange(np.ceil(min_x), np.floor(max_x) + 1)
             y_grid = np.arange(np.ceil(min_y), np.floor(max_y) + 1)
 
             left_boundary = int(screen_half + (0 - center_x) * grid_size)  # x = 0
-            right_boundary = int(screen_half + (cfg.MAP_SIZE - center_x) * grid_size)  # x = MAP_SIZE
+            right_boundary = int(screen_half + (self.map_size - center_x) * grid_size)  # x = MAP_SIZE
             top_boundary = int(screen_half + (0 - center_y) * grid_size)  # y = 0
-            bottom_boundary = int(screen_half + (cfg.MAP_SIZE - center_y) * grid_size)  # y = MAP_SIZE
+            bottom_boundary = int(screen_half + (self.map_size - center_y) * grid_size)  # y = MAP_SIZE
 
             # Draw vertical lines
             for x in x_grid:
                 pixel_x = int(screen_half + (x - center_x) * grid_size)
-                if 0 <= pixel_x < cfg.SCREEN_SIZE:
+                if 0 <= pixel_x < self.screen_size:
                     pygame.draw.line(surface, grid_color, (pixel_x, top_boundary), (pixel_x, bottom_boundary), 1)
             # Draw horizontal lines
             for y in y_grid:
                 pixel_y = int(screen_half + (y - center_y) * grid_size)
-                if 0 <= pixel_y < cfg.SCREEN_SIZE:
+                if 0 <= pixel_y < self.screen_size:
                     pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
 
         # Draw all polygons
@@ -376,8 +386,8 @@ class DiepIOEnvBody(Env):
             max_y = max(vertices_y)
 
             # Check if the polygon's bounding box intersects with the screen
-            if (max_x < 0 or min_x >= cfg.SCREEN_SIZE or
-                max_y < 0 or min_y >= cfg.SCREEN_SIZE):
+            if (max_x < 0 or min_x >= self.screen_size or
+                max_y < 0 or min_y >= self.screen_size):
                 continue  # Polygon is completely outside the screen
 
             # Collision Box
@@ -390,18 +400,18 @@ class DiepIOEnvBody(Env):
             pygame.draw.polygon(surface, color, vertices)
 
             # Draw HP bar if the polygon's center is on-screen or near the edge
-            # if not (-grid_size <= pixel_x <= cfg.SCREEN_SIZE + grid_size and -grid_size <= pixel_y <= cfg.SCREEN_SIZE + grid_size):
+            # if not (-grid_size <= pixel_x <= self.screen_size + grid_size and -grid_size <= pixel_y <= self.screen_size + grid_size):
             #     continue
 
             if unit.hp < unit.max_hp:
                 half_unit_size = grid_size * unit.radius
                 pygame.draw.rect(
                     surface, (0, 0, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
                 )
                 pygame.draw.rect(
                     surface, (0, 216, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, cfg.SCREEN_SIZE / 200)
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, max(1, self.screen_size / 200))
                 )
 
         # Draw all tanks
@@ -419,8 +429,8 @@ class DiepIOEnvBody(Env):
             max_y = pixel_y + unit.radius * 2
 
             # Check if the unit's bounding box intersects with the screen
-            if (max_x < 0 or min_x >= cfg.SCREEN_SIZE or
-                max_y < 0 or min_y >= cfg.SCREEN_SIZE):
+            if (max_x < 0 or min_x >= self.screen_size or
+                max_y < 0 or min_y >= self.screen_size):
                 continue  # unit is completely outside the screen
 
             # Draw orientation line
@@ -447,11 +457,11 @@ class DiepIOEnvBody(Env):
                 half_unit_size = grid_size * unit.radius
                 pygame.draw.rect(
                     surface, (0, 0, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
                 )
                 pygame.draw.rect(
                     surface, (0, 216, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, cfg.SCREEN_SIZE / 200)
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, max(1, self.screen_size / 200))
                 )
 
         # for bullet in self.bullet_pool.bullets:
@@ -461,7 +471,7 @@ class DiepIOEnvBody(Env):
         #     rel_y = bullet.y - center_y
         #     pixel_x = int(screen_half + rel_x * grid_size)
         #     pixel_y = int(screen_half + rel_y * grid_size)
-        #     if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
+        #     if 0 <= pixel_x < self.screen_size and 0 <= pixel_y < self.screen_size:
         #         color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == agent_id else (255, 0, 0)
         #         # color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
         #         if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
@@ -473,18 +483,18 @@ class DiepIOEnvBody(Env):
         #             half_unit_size = grid_size * bullet.radius
         #             pygame.draw.rect(
         #                 surface, (0, 0, 0),
-        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
         #             )
         #             pygame.draw.rect(
         #                 surface, (0, 216, 0),
-        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, cfg.SCREEN_SIZE / 200)
+        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, max(1, self.screen_size / 200))
         #             )
 
         if for_render:
             # Render skill panel for agent 0
             self.skill_buttons = []  # Clear previous buttons
-            scale = cfg.SCREEN_SIZE / 800
-            self._render_skill_panel(self.tanks[0], surface, 10 * scale, cfg.SCREEN_SIZE - 260 * scale)  # Left-bottom position
+            scale = self.screen_size / 800
+            self._render_skill_panel(self.tanks[0], surface, 10 * scale, self.screen_size - 260 * scale)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
@@ -568,7 +578,7 @@ class DiepIOEnvBody(Env):
 
         # Update tank direction based on mouse position
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        screen_half = cfg.SCREEN_SIZE // 2
+        screen_half = self.screen_size // 2
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
         if rx != 0 or ry != 0:
             magnitude = np.hypot(rx, ry)
@@ -877,9 +887,9 @@ class DiepIOEnvBody(Env):
 
             # invalid move reward
             if (dx < 0 and tank.x <= tank.radius + 1e-6 or
-                dx > 0 and tank.x >= cfg.MAP_SIZE - tank.radius - 1e-6 or
+                dx > 0 and tank.x >= self.map_size - tank.radius - 1e-6 or
                 dy < 0 and tank.y <= tank.radius + 1e-6 or
-                dy > 0 and tank.y >= cfg.MAP_SIZE - tank.radius - 1e-6):
+                dy > 0 and tank.y >= self.map_size - tank.radius - 1e-6):
                 self._rewards -= 0.01
 
             old_x, old_y = tank.x, tank.y
@@ -902,7 +912,7 @@ class DiepIOEnvBody(Env):
             #     magnitude = np.hypot(rx, ry)
             #     tank.rx, tank.ry = rx / magnitude, ry / magnitude
 
-            tank.move(dx, dy)
+            tank.move(dx, dy, self.map_size)
             self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
             # if shoot > 0.5 and tank.reload_counter <= 0:
@@ -913,40 +923,24 @@ class DiepIOEnvBody(Env):
             #     tank.recoil_vx += -1 * tank.rx
             #     tank.recoil_vy -= -1 * tank.ry
 
-        min_distance = 120
-        min_poly_alive = True
-
         for poly in self.polygons:
             old_x, old_y = poly.x, poly.y
-
-            distance = np.hypot(self.tanks[0].x - poly.x, self.tanks[0].y - poly.y)
-            if distance < min_distance:
-                min_distance = distance
-                min_poly_alive = poly.alive
 
             if poly.alive:
                 poly.regen_health()
                 poly.update_counter()
                 poly.update_direction()
-                poly.move(poly.rx, poly.ry)
+                poly.move(poly.rx, poly.ry, self.map_size)
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
             else:
                 # respawn
                 poly.__init__(
-                    x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
-                    y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                    x=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
+                    y=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
                     side=self._rand_poly_side(),
                     new_id=False,
                 )
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
-
-        if min_poly_alive:
-            if min_distance < self.last_min_poly_distance:
-                self._rewards += (120 - min_distance) * 0.0001
-            self.last_min_poly_distance = min_distance
-        else:
-            self.last_min_poly_distance = 120
-
         # Update bullets
         # for bullet in self.bullet_pool.bullets:  # iterate over a copy
         #     if not bullet.alive:
@@ -1013,7 +1007,7 @@ class DiepIOEnvBody(Env):
             # if self.tanks[0].alive:
             surface = self._get_frame(for_render=True)
             # self.screen.blit(surface, (0, 0))
-            self.screen.blit(surface, (cfg.SCREEN_SIZE * i, 0))
+            self.screen.blit(surface, (self.screen_size * i, 0))
 
         pygame.display.flip()
         if self.render_mode == "human":

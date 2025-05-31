@@ -91,7 +91,7 @@ class Unit:
             self.hp_regen_frame -= 1
 
     # 在 Unit 类的 move 方法中调用
-    def move(self, dx: float, dy: float):
+    def move(self, dx: float, dy: float, map_size:float):
         if not self.alive:
             return
         max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
@@ -101,7 +101,7 @@ class Unit:
             self.collision_vx, self.collision_vy, self.collision_frame, self.max_collision_frame,
             self.recoil_vx, self.recoil_vy, max_v, cfg.BASE_ACC_FRAMES, cfg.BASE_DEC_FRAMES,
             cfg.TANK_RECOIL_V_SCALE if self.type == UnitType.Tank else 0.0,
-            cfg.TANK_RECOIL_DECAY if self.type == UnitType.Tank else 0.0, cfg.MAP_SIZE
+            cfg.TANK_RECOIL_DECAY if self.type == UnitType.Tank else 0.0, map_size
         )
 
 @njit

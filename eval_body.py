@@ -4,6 +4,8 @@ from ray.rllib.algorithms.algorithm import Algorithm
 from env_body import DiepIOEnvBody
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
+import imageio
+import pygame
 
 from ray.tune.registry import register_env
 
@@ -17,12 +19,11 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_body_onlymove/checkpoint_000007"
+checkpoint_path = "~/ray_results/diepio_body_onlymove_dqn/checkpoint_000009"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
-module = {}
-module["agent_0"] = algo.get_module("body_policy")
+module = algo.get_module("body_policy")
 
 env_config = {
     "n_tanks": 1,
@@ -36,37 +37,43 @@ env = env_creator(env_config)
 
 obs, _ = env.reset()
 
-done = {"__all__": False}
+done = False
 
-total_rewards = {agent: 0.0 for agent in env._agent_ids}
+total_rewards = 0
 
-while not done["__all__"]:
-    actions = {}
-    for agent_id, agent_obs in obs.items():
-        obs_tensor = torch.tensor(agent_obs, dtype=torch.float32).unsqueeze(0)
+frames = []
 
-        # 模型推論，會回傳 logits
-        result = module[agent_id].forward_inference({"obs": obs_tensor})
-        dist_inputs = result["action_dist_inputs"]
+frame = pygame.surfarray.array3d(env._get_frame(for_render=True))
+frame = frame.transpose([1, 0, 2])  # 轉換為 (height, width, 3)
+frames.append(frame)
 
-        # 獲取 distribution class
-        dist_class, _ = ModelCatalog.get_action_dist(env.action_space, config={}, framework="torch")
+while not done:
 
-        # 構建 distribution，抽樣動作
-        dist = dist_class(dist_inputs, env.action_space)
-        sample = dist.sample()
+    obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
 
-        # unbatch 動作: TensorDict -> Dict[str, np.ndarray]
-        sample = unbatch(sample)[0].detach().cpu().numpy()
-        actions[agent_id] = sample
+    # 模型推論，會回傳 logits
+    result = module.forward_inference({"obs": obs_tensor})
 
-    obs, rewards, done, trunc, infos = env.step(actions)
+    # unbatch 動作: Tensor -> np.ndarray
+    action = unbatch(result['actions'])[0].detach().cpu().numpy()
 
-    for agent, reward in rewards.items():
-        total_rewards[agent] += reward
+    obs, reward, done, trunc, info = env.step(action)
 
-    done["__all__"] |= trunc["__all__"]
+    if env.step_count % 2 == 0:
+        frame = pygame.surfarray.array3d(env._get_frame(for_render=True))
+        frame = frame.transpose([1, 0, 2])  # 轉換為 (height, width, 3)
+        frames.append(frame)
+
+    total_rewards += reward
+    done |= trunc
 
 print("Total Rewards:", total_rewards)
 
 ray.shutdown()
+
+pygame.quit()
+
+# 保存為 GIF
+output_path = "diepio_simulation.gif"
+imageio.mimsave(output_path, frames, fps=100, optimize=True)
+print(f"GIF saved to {output_path}")

@@ -1,7 +1,7 @@
 import ray
 from ray import tune
-from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.dqn import DQNConfig
+from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
 from env_body import DiepIOEnvBody
 from ray.tune.registry import register_env
 
@@ -23,7 +23,7 @@ env_config = {
     "render_mode": True,
     "max_steps": 5000,
     "skill_mode": [2],
-    "skip_frames": 4
+    "skip_frames": 10,
 }
 
 # Get observation and action spaces
@@ -71,13 +71,17 @@ config = (
         v_min=-30,
         v_max=300,
         n_step=5,
-        model={
-            "fcnet_hiddens": [256, 256],
-            # "fcnet_activation": "tanh",
-            "use_lstm": True,
-            "lstm_cell_size": 256,
-            "max_seq_len": 20
-        }
+        noisy=True,
+        epsilon=[(0, 0.1), (10000, 0.01)],
+    )
+    .rl_module(
+        model_config=DefaultModelConfig(
+            fcnet_hiddens=[256, 256],
+            fcnet_activation="relu",
+            # use_lstm=True,
+            # lstm_cell_size=256,
+            # max_seq_len=20,
+        )
     )
 )
 
@@ -87,7 +91,7 @@ tuner = tune.Tuner(
     param_space=config.to_dict(),
     run_config=tune.RunConfig(
         stop={"training_iteration": 1000000},
-        name="diepio_body_onlymove",
+        name="diepio_body_onlymove_dqn",
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
             checkpoint_frequency=50,
