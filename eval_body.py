@@ -1,8 +1,7 @@
 import ray
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
-from env_new import DiepIOEnvBasic
-from wrappers import DiepIO_FixedOBS_Wrapper
+from env_body import DiepIOEnvBody
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
 
@@ -10,7 +9,7 @@ from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIO_FixedOBS_Wrapper(env_config)
+    return DiepIOEnvBody(env_config)
 
 register_env("diepio-v0", env_creator)
 
@@ -18,21 +17,18 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim_2agent/checkpoint_000039"
+checkpoint_path = "~/ray_results/diepio_body_onlymove/checkpoint_000007"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
 module = {}
-module["agent_0"] = algo.get_module("bullet_policy")
-module["agent_1"] = algo.get_module("body_policy")
+module["agent_0"] = algo.get_module("body_policy")
 
 env_config = {
-    "n_tanks": 2,
-    "render_mode": "human",
-    "max_steps": 40000,
-    "frame_stack_size": 1,
-    "skip_frames": 4,
-    "skill_mode": [1, 2]
+    "n_tanks": 1,
+    "render_mode": True,
+    "max_steps": 5000,
+    "skill_mode": [2]
 }
 
 # 設定 render 模式的環境
@@ -61,12 +57,8 @@ while not done["__all__"]:
         sample = dist.sample()
 
         # unbatch 動作: TensorDict -> Dict[str, np.ndarray]
-        sample_dict = unbatch(sample)[0]
-        sample_dict = {
-            k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v
-            for k, v in sample_dict.items()
-        }
-        actions[agent_id] = sample_dict
+        sample = unbatch(sample)[0].detach().cpu().numpy()
+        actions[agent_id] = sample
 
     obs, rewards, done, trunc, infos = env.step(actions)
 
@@ -76,3 +68,5 @@ while not done["__all__"]:
     done["__all__"] |= trunc["__all__"]
 
 print("Total Rewards:", total_rewards)
+
+ray.shutdown()

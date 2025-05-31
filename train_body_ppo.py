@@ -1,32 +1,27 @@
 import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
-from env_new import DiepIOEnvBasic
-from wrappers import DiepIO_FixedOBS_Wrapper
+from env_body import DiepIOEnvBody
 from ray.tune.registry import register_env
 
 # Register environment
 def env_creator(env_config):
-    return DiepIO_FixedOBS_Wrapper(env_config)
+    return DiepIOEnvBody(env_config)
 
 register_env("diepio-v0", env_creator)
 
 # Policy mapping function
 def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
-    if agent_id == "agent_0":
-        return "bullet_policy"
     return "body_policy"
 
 # Initialize Ray
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 env_config = {
-    "n_tanks": 2,
+    "n_tanks": 1,
     "render_mode": False,
-    "max_steps": 20000,
-    "frame_stack_size": 1,
-    "skip_frames": 4,
-    "skill_mode": [1, 2]
+    "max_steps": 5000,
+    "skill_mode": [2]
 }
 
 # Get observation and action spaces
@@ -67,22 +62,21 @@ config = (
         num_cpus_per_learner=1
     )
     .multi_agent(
-        policies={"bullet_policy": (None, obs_space, act_space, {}), "body_policy": (None, obs_space, act_space, {})},
+        policies={"body_policy": (None, obs_space, act_space, {})},
         policy_mapping_fn=policy_mapping_fn,
-        policies_to_train=["bullet_policy", "body_policy"]
+        policies_to_train=["body_policy"]
     )
     .training(
         train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
         minibatch_size=64,          # ✅ 減少分割用記憶體
-        gamma=0.95,
-        lr=5e-4,
-        entropy_coeff=0.01,
-        vf_loss_coeff=0.25,
+        gamma=0.99,
+        lr=5e-5,
+        entropy_coeff=0.05,
+        vf_loss_coeff=0.75,
         model={
-            # "fcnet_hiddens": [512, 512, 256],  # Deeper and wider network
             "fcnet_activation": "tanh",
             "use_lstm": True,
-            "fcnet_hiddens": [512, 256],
+            "fcnet_hiddens": [256, 256],
             "lstm_cell_size": 256,
             "max_seq_len": 20,
             "post_fcnet_hiddens": [128]
@@ -96,11 +90,11 @@ tuner = tune.Tuner(
     param_space=config.to_dict(),
     run_config=tune.RunConfig(
         stop={"training_iteration": 1000000},
-        name="diepio_fixedobs_only_move_aim_2agent",
+        name="diepio_body_onlymove",
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
             checkpoint_frequency=50,
-            num_to_keep=3,
+            num_to_keep=10,
             # checkpoint_score_attribute="episode_reward_mean",
             # checkpoint_score_order="max"
         ),

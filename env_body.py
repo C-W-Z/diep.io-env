@@ -39,8 +39,8 @@ class DiepIOEnvBody(MultiAgentEnv):
         high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 45.0] + [7] * 8
 
         # === Part 2: Polygons ===
-        polygon_low  = [-80.0, -80.0,    0.0, 0.9, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
-        polygon_high = [ 80.0,  80.0, 113.14, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
+        polygon_low  = [-1.0, -1.0,    0.0, 0.9, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
+        polygon_high = [ 1.0,  1.0, 113.14, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
         # === Padding sizes ===
@@ -183,9 +183,14 @@ class DiepIOEnvBody(MultiAgentEnv):
             # if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
             side_one_hot = [0, 0, 0]        # type of sides [0, 1]
             side_one_hot[obj.side - 3] = 1  # obj.side is in [3, 4, 5]
+
+            distance = np.hypot(dx, dy)
+            if distance > 0:
+                dx, dy = dx / distance, dy / distance
+
             polygon_obs[i, :] = np.array([
-                dx, dy,                     # Relative position [-50.0, 50.0]
-                np.hypot(dx, dy),           # distance [0, 70.72]
+                dx, dy,                     # direction [-1.0, 1.0]
+                distance,                   # distance [0, sqrt(2x80^2)]
                 obj.radius,                 # [0.5, 1.6]
                 obj.total_vx, obj.total_vy, # [-1.0, 1.0]
                 obj.hp / obj.max_hp,        # Normalized health [0.0, 1.0]
@@ -961,15 +966,20 @@ class DiepIOEnvBody(MultiAgentEnv):
             tank = self.tanks[agent_idx]
             if not self._dones[agent] and not tank.alive:
                 tank.hp = 0
-                tank.calc_respawn_score()
+                # tank.calc_respawn_score()
                 self._rewards[agent] -= 10
                 self._dones[agent] = True
+            else:
+
+                min_distance = min(np.hypot(tank.x - poly.x, tank.y - poly.y) for poly in self.polygons)
+                if min_distance < 10:
+                    self._rewards[agent] += (10 - min_distance) * 0.0001
 
             self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
             self.prev_tanks_score[agent_idx] = tank.score
 
             if self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
-                self._rewards[agent] -= 0.001
+                self._rewards[agent] -= 0.01
 
             if self._rewards[agent] > 0:
                 self.no_reward_frames[agent_idx] = 0
@@ -981,7 +991,6 @@ class DiepIOEnvBody(MultiAgentEnv):
             else:
                 observations[agent] = self._get_obs(agent_idx)
 
-        self.step_count += 1
         if self.step_count >= self.max_steps or sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or any(self._dones.values()):
             self._dones = {agent: True for agent in self._agent_ids}
             self._dones["__all__"] = True
