@@ -30,7 +30,7 @@ class DiepIOEnvBody(Env):
         self.screen_size = 400
 
         # Maximum number of polygons and tanks to include in the observation
-        self.obs_max_polygons = 3
+        self.obs_max_polygons = 12
 
         # Observation space
         # === Part 1: Self state ===
@@ -38,7 +38,7 @@ class DiepIOEnvBody(Env):
         high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 278.0] + [7] * 8
 
         # === Part 2: Polygons ===
-        polygon_low  = [-1.0, -1.0,                               0.0, 0.9, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
+        polygon_low  = [-1.0, -1.0,                               0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
         polygon_high = [ 1.0,  1.0, np.sqrt(2) * self.map_size + 1e-6, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
@@ -160,10 +160,10 @@ class DiepIOEnvBody(Env):
 
         # Observation range
         observation_size = agent.observation_size
-        # min_x = agent.x - observation_size / 2
-        # max_x = agent.x + observation_size / 2
-        # min_y = agent.y - observation_size / 2
-        # max_y = agent.y + observation_size / 2
+        min_x = agent.x - observation_size / 2
+        max_x = agent.x + observation_size / 2
+        min_y = agent.y - observation_size / 2
+        max_y = agent.y + observation_size / 2
 
         # 2. Collect and sort polygons by distance
         polygon_data = []
@@ -175,7 +175,7 @@ class DiepIOEnvBody(Env):
             side_one_hot = [0, 0, 0]
             side_one_hot[obj.side - 3] = 1
             features = [
-                np.float32(dx / max(distance, 1e-6)),  # Avoid division by zero
+                np.float32(dx / max(distance, 1e-6)),
                 np.float32(dy / max(distance, 1e-6)),
                 np.float32(distance),
                 np.float32(obj.radius),
@@ -183,16 +183,17 @@ class DiepIOEnvBody(Env):
                 np.float32(obj.total_vy),
                 np.float32(obj.hp / obj.max_hp),
             ] + side_one_hot
-            polygon_data.append((distance, features))
+            polygon_data.append((distance, obj.x, obj.y, features))
 
         # Sort by distance and select top k
-        polygon_data.sort(key=lambda x: x[0])  # Sort by distance
-        selected_polygons = polygon_data[:self.obs_max_polygons]  # Take top k
+        polygon_data.sort(key=lambda x: x[0])
+        selected_polygons = polygon_data[:self.obs_max_polygons]
 
         # 3. Create polygon observation array
         polygon_obs = np.zeros((self.obs_max_polygons, self.polygon_features), dtype=np.float32)
-        for i, (_, features) in enumerate(selected_polygons):
-            polygon_obs[i, :] = np.array(features, dtype=np.float32)
+        for i, (_, x, y, features) in enumerate(selected_polygons):
+            if min_x <= x <= max_x and min_y <= y <= max_y:
+                polygon_obs[i, :] = np.array(features, dtype=np.float32)
 
         # 4. Combine observations
         return np.concatenate([obs, polygon_obs.flatten()], dtype=np.float32)
