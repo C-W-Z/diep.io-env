@@ -18,19 +18,21 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim_1agent/PPO_diepio-v0_c32a7_00000_0_2025-05-31_02-06-08/checkpoint_000199"
+checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim_2agent/PPO_diepio-v0_52eea_00000_0_2025-05-31_11-42-49/checkpoint_000001"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
-module = algo.get_module("shared_policy")
+module = {}
+module["agent_0"] = algo.get_module("bullet_policy")
+module["agent_1"] = algo.get_module("body_policy")
 
 env_config = {
-    "n_tanks": 1,
+    "n_tanks": 2,
     "render_mode": "human",
     "max_steps": 40000,
     "frame_stack_size": 1,
     "skip_frames": 4,
-    "skill_mode": [0, 0]
+    "skill_mode": [1, 2]
 }
 
 # 設定 render 模式的環境
@@ -48,7 +50,7 @@ while not done["__all__"]:
         obs_tensor = torch.tensor(agent_obs, dtype=torch.float32).unsqueeze(0)
 
         # 模型推論，會回傳 logits
-        result = module.forward_inference({"obs": obs_tensor})
+        result = module[agent_id].forward_inference({"obs": obs_tensor})
         dist_inputs = result["action_dist_inputs"]
 
         # 獲取 distribution class

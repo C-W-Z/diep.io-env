@@ -74,9 +74,9 @@ config = (
     .training(
         train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
         minibatch_size=64,          # ✅ 減少分割用記憶體
-        gamma=0.99,
+        gamma=0.95,
         lr=5e-4,
-        entropy_coeff=0.005,
+        entropy_coeff=0.01,
         vf_loss_coeff=0.25,
         model={
             # "fcnet_hiddens": [512, 512, 256],  # Deeper and wider network

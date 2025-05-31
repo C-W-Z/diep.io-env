@@ -994,11 +994,11 @@ class DiepIOEnvBasic(MultiAgentEnv):
             self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
             self.prev_tanks_score[agent_idx] = tank.score
 
-            if tank.alive and self.no_reward_frames[agent_idx] > 60 * cfg.FPS:
-                self._rewards[agent] -= 1
-                truncations[agent] = True
+            # if tank.alive and self.no_reward_frames[agent_idx] > 60 * cfg.FPS:
+            #     self._rewards[agent] -= 1
+            #     truncations[agent] = True
 
-            elif self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
+            if self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
                 self._rewards[agent] -= 0.001
 
             if self._rewards[agent] > 0:

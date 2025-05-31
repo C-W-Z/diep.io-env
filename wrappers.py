@@ -228,7 +228,7 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         for i, agent in enumerate(self.env._agent_ids):
             skill_index = self.env._auto_choose_skill(agent, mode=self.skill_mode[i])
 
-            move = self.action_map[actions[agent]["d"]]
+            move = self.action_map[int(actions[agent]["d"])]
             actions[agent]["d"] = np.concatenate((move, np.array([1, skill_index])))
             # angle = actions[agent]["c"]
             # actions[agent]["c"] = [np.cos(angle), np.sin(angle)]
@@ -329,7 +329,7 @@ def test_fixedobs_wrapper():
 
     while True:
         action_0 = env.env._get_player_input()
-        action_0["d"] = dx_dy_map[tuple(action_0["d"][:2])]
+        action_0["d"] = np.array(dx_dy_map[tuple(action_0["d"][:2])])
         # action_0["c"] = np.arctan2(action_0["c"][1], action_0["c"][0])
         # action_1 = env.env._get_random_input()
         # action_1["d"] = action_1["d"][:2]
