@@ -37,22 +37,22 @@ class DiepIOEnvBasic(MultiAgentEnv):
 
         # Observation space (per agent)
         # === Part 1: Self state ===
-        low  = [0.0, 0.0, 0.0, -1.0, -1.0, 0.0,  1.0,  0.0] + [0] * 8
-        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 45.0, 33.0] + [7] * 8
+        low  = [0.0, 0.0, 0.0, -1.0, -1.0, -1.0, -1.0, 0.0,  1.0,  0.0] + [0] * 8
+        high = [1.0, 1.0, 1.6,  1.0,  1.0,  1.0,  1.0, 1.0, 45.0, 33.0] + [7] * 8
 
         # === Part 2: Polygons ===
-        polygon_low  = [-50.0, -50.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
-        polygon_high = [ 50.0,  50.0, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
+        polygon_low  = [-50.0, -50.0,   0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
+        polygon_high = [ 50.0,  50.0, 70.72, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
         # === Part 3: Other Tanks ===
-        tank_low  = [-50.0, -50.0, 0.0, -1.0, -1.0, 0.0,  0.0]
-        tank_high = [ 50.0,  50.0, 1.6,  1.0,  1.0, 1.0, 45.0]
+        tank_low  = [-50.0, -50.0,   0.0, 0.0, -1.0, -1.0, 0.0,  0.0]
+        tank_high = [ 50.0,  50.0, 70.72, 1.6,  1.0,  1.0, 1.0, 45.0]
         self.tank_features = len(tank_low)
 
         # === Part 4: Bullets ===
-        bullet_low  = [-50.0, -50.0, 0.0, -1.0, -1.0, 0.0]
-        bullet_high = [ 50.0,  50.0, 1.6,  1.0,  1.0, 1.0]
+        bullet_low  = [-50.0, -50.0,   0.0, 0.0, -1.0, -1.0, 0.0]
+        bullet_high = [ 50.0,  50.0, 70.72, 1.6,  1.0,  1.0, 1.0]
         self.bullet_features = len(bullet_low)
 
         # === Padding sizes ===
@@ -161,7 +161,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE, # Position [0.0, 1.0]
             agent.radius,                                   # [0.5, 1.6]
             agent.total_vx, agent.total_vy,                 # Velocity [-1.0, 1.0]
-            # agent.rx, agent.ry,                           # Direction [-1.0, 1.0]
+            agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
             agent.hp / agent.max_hp,                        # Normalized health [0.0, 1.0]
             agent.level,                                    # Player level [1, 45]
             agent.skill_points,                             # Available skill points [0, 33]
@@ -195,6 +195,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
                 side_one_hot[obj.side - 3] = 1  # obj.side is in [3, 4, 5]
                 polygon_obs[i, :] = np.array([
                     dx, dy,                     # Relative position [-50.0, 50.0]
+                    np.hypot(dx, dy),           # distance [0, 70.72]
                     obj.radius,                 # [0.5, 1.6]
                     obj.total_vx, obj.total_vy, # [-1.0, 1.0]
                     obj.hp / obj.max_hp,        # Normalized health [0.0, 1.0]
@@ -211,6 +212,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if min_x <= other_tank.x <= max_x and min_y <= other_tank.y <= max_y:
                 tanks_obs[i, :] = np.array([
                     dx, dy,                                     # Relative position [-50.0, 50.0]
+                    np.hypot(dx, dy),                           # distance [0, 70.72]
                     other_tank.radius,                          # [0.5, 1.6]
                     other_tank.total_vx, other_tank.total_vy,   # [-1.0, 1.0]
                     other_tank.hp / other_tank.max_hp,          # Normalized health [0.0, 1.0]
@@ -226,6 +228,7 @@ class DiepIOEnvBasic(MultiAgentEnv):
             if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
                 bullet_obs[i, :] = np.array([
                     dx, dy,                                     # Relative position [-50.0, 50.0]
+                    np.hypot(dx, dy),                           # distance [0, 70.72]
                     bullet.radius,                              # [0.5, 1.6]
                     bullet.total_vx, bullet.total_vy,           # [-1.0, 1.0]
                     1 if bullet.tank.id != agent.id else 0      # Is enemy bullet or not [0, 1]

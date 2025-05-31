@@ -138,8 +138,21 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
 
         self.skill_mode = env_config.get("skill_mode", [0 for _ in self.env._agent_ids])
 
+        self.action_map = {
+            0: [1, 1],  # NONE
+            1: [1, 2],  # W
+            2: [0, 1],  # A
+            3: [1, 0],  # S
+            4: [2, 1],  # D
+            5: [0, 2],  # W+A
+            6: [2, 2],  # W+D
+            7: [0, 0],  # S+A
+            8: [2, 0]   # S+D
+        }
+
         self.action_space = spaces.Dict({
-            "d": spaces.MultiDiscrete([3, 3]),                             # discrete
+            "d": spaces.Discrete(9),                                       # discrete
+            # "c": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32) # continuous
             "c": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
         })
         self.action_spaces =  {
@@ -214,7 +227,11 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
 
         for i, agent in enumerate(self.env._agent_ids):
             skill_index = self.env._auto_choose_skill(agent, mode=self.skill_mode[i])
-            actions[agent]["d"] = np.concatenate((actions[agent]["d"], np.array([1, skill_index])))
+
+            move = self.action_map[actions[agent]["d"]]
+            actions[agent]["d"] = np.concatenate((move, np.array([1, skill_index])))
+            # angle = actions[agent]["c"]
+            # actions[agent]["c"] = [np.cos(angle), np.sin(angle)]
 
         for f in range(self.skip_frames):
             obs, rewards, dones, truncations, infos = self.env.step(actions, skip_frame=(f < self.skip_frames - 1))
@@ -291,16 +308,29 @@ def test_fixedobs_wrapper():
     env = DiepIO_FixedOBS_Wrapper(env_config)
 
     print(env.observation_space)
-    print(env.action_space["d"].nvec.sum(), env.action_space["c"].shape)
+    print(env.action_space["d"], env.action_space["c"].shape)
 
     obs, _ = env.reset()
 
     for i in range(env.env.n_tanks):
         check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
+    dx_dy_map = {
+        (1, 1): 0,  # NONE
+        (1, 2): 1,  # W
+        (0, 1): 2,  # A
+        (1, 0): 3,  # S
+        (2, 1): 4,  # D
+        (0, 2): 5,  # W+A
+        (2, 2): 6,  # W+D
+        (0, 0): 7,  # S+A
+        (2, 0): 8   # S+D
+    }
+
     while True:
         action_0 = env.env._get_player_input()
-        action_0["d"] = action_0["d"][:2]
+        action_0["d"] = dx_dy_map[tuple(action_0["d"][:2])]
+        # action_0["c"] = np.arctan2(action_0["c"][1], action_0["c"][0])
         # action_1 = env.env._get_random_input()
         # action_1["d"] = action_1["d"][:2]
         obs, rewards, dones, truncations, infos = env.step({

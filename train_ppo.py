@@ -13,18 +13,20 @@ register_env("diepio-v0", env_creator)
 
 # Policy mapping function
 def policy_mapping_fn(agent_id, episode=None, worker=None, **kwargs):
-    return "shared_policy"
+    if agent_id == "agent_0":
+        return "bullet_policy"
+    return "body_policy"
 
 # Initialize Ray
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 env_config = {
-    "n_tanks": 1,
+    "n_tanks": 2,
     "render_mode": False,
     "max_steps": 40000,
     "frame_stack_size": 1,
     "skip_frames": 4,
-    "skill_mode": [0]
+    "skill_mode": [1, 2]
 }
 
 # Get observation and action spaces
@@ -65,15 +67,15 @@ config = (
         num_cpus_per_learner=1
     )
     .multi_agent(
-        policies={"shared_policy": (None, obs_space, act_space, {})},
+        policies={"bullet_policy": (None, obs_space, act_space, {}), "body_policy": (None, obs_space, act_space, {})},
         policy_mapping_fn=policy_mapping_fn,
-        policies_to_train=["shared_policy"]
+        policies_to_train=["bullet_policy", "body_policy"]
     )
     .training(
         train_batch_size=512,       # ✅ 減少一次訓練的記憶體需求
         minibatch_size=64,          # ✅ 減少分割用記憶體
         gamma=0.99,
-        lr=3e-4,
+        lr=5e-4,
         entropy_coeff=0.005,
         vf_loss_coeff=0.25,
         model={
@@ -94,7 +96,7 @@ tuner = tune.Tuner(
     param_space=config.to_dict(),
     run_config=tune.RunConfig(
         stop={"training_iteration": 1000000},
-        name="diepio_fixedobs_only_move_aim_1agent",
+        name="diepio_fixedobs_only_move_aim_2agent",
         checkpoint_config=tune.CheckpointConfig(
             checkpoint_at_end=True,
             checkpoint_frequency=50,

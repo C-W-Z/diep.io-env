@@ -18,7 +18,7 @@ register_env("diepio-v0", env_creator)
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 # 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim_1agent/PPO_diepio-v0_518dd_00000_0_2025-05-31_01-48-39/checkpoint_000005"
+checkpoint_path = "~/ray_results/diepio_fixedobs_only_move_aim_1agent/PPO_diepio-v0_c32a7_00000_0_2025-05-31_02-06-08/checkpoint_000199"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
