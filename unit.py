@@ -95,7 +95,7 @@ class Unit:
         if not self.alive:
             return
         max_v = cfg.BASE_MAX_VELOCITY * self.v_scale
-        self.x, self.y, self.vx, self.vy, self.ax, self.ay, self.collision_vx, self.collision_vy, \
+        self.x, self.y, self.vx, self.vy, self.total_vx, self.total_vy, self.ax, self.ay, self.collision_vx, self.collision_vy, \
         self.collision_frame, self.recoil_vx, self.recoil_vy = move_unit(
             self.x, self.y, dx, dy, self.vx, self.vy, self.ax, self.ay, self.radius,
             self.collision_vx, self.collision_vy, self.collision_frame, self.max_collision_frame,
@@ -154,7 +154,7 @@ def move_unit(x, y, dx, dy, vx, vy, ax, ay, radius, collision_vx, collision_vy,
     x = clip_scalar(x, radius, map_size - radius)
     y = clip_scalar(y, radius, map_size - radius)
 
-    return x, y, vx, vy, ax, ay, collision_vx, collision_vy, collision_frame, recoil_vx, recoil_vy
+    return x, y, vx, vy, total_vx, total_vy, ax, ay, collision_vx, collision_vy, collision_frame, recoil_vx, recoil_vy
 
 @njit
 def deal_damage_unit(self_hp, self_body_damage, self_type,

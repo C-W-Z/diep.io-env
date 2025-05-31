@@ -120,6 +120,7 @@ class DiepIOEnvBody(MultiAgentEnv):
 
         self.prev_tanks_score = [tank.score for tank in self.tanks]
         self.no_reward_frames = [0 for _ in self.tanks]
+        self.last_min_poly_distance = 120
 
         # add all objects to the map
         # add all objects to the collision registry
@@ -930,8 +931,17 @@ class DiepIOEnvBody(MultiAgentEnv):
             #     tank.recoil_vx += -1 * tank.rx
             #     tank.recoil_vy -= -1 * tank.ry
 
+        min_distance = 120
+        min_poly_alive = True
+
         for poly in self.polygons:
             old_x, old_y = poly.x, poly.y
+
+            distance = np.hypot(self.tanks[0].x - poly.x, self.tanks[0].y - poly.y)
+            if distance < min_distance:
+                min_distance = distance
+                min_poly_alive = poly.alive
+
             if poly.alive:
                 poly.regen_health()
                 poly.update_counter()
@@ -947,6 +957,13 @@ class DiepIOEnvBody(MultiAgentEnv):
                     new_id=False,
                 )
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
+
+        if min_poly_alive:
+            if min_distance < self.last_min_poly_distance:
+                self._rewards[self._agent_ids[0]] += (120 - min_distance) * 0.0001
+            self.last_min_poly_distance = min_distance
+        else:
+            self.last_min_poly_distance = 120
 
         # Update bullets
         # for bullet in self.bullet_pool.bullets:  # iterate over a copy
@@ -969,11 +986,6 @@ class DiepIOEnvBody(MultiAgentEnv):
                 # tank.calc_respawn_score()
                 self._rewards[agent] -= 10
                 self._dones[agent] = True
-            else:
-
-                min_distance = min(np.hypot(tank.x - poly.x, tank.y - poly.y) for poly in self.polygons)
-                if min_distance < 10:
-                    self._rewards[agent] += (10 - min_distance) * 0.0001
 
             self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
             self.prev_tanks_score[agent_idx] = tank.score

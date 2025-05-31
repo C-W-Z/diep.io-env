@@ -19,9 +19,10 @@ ray.init(ignore_reinit_error=True, include_dashboard=False)
 
 env_config = {
     "n_tanks": 1,
-    "render_mode": False,
+    "render_mode": True,
     "max_steps": 5000,
-    "skill_mode": [2]
+    "skill_mode": [2],
+    "skip_frames": 4
 }
 
 # Get observation and action spaces
