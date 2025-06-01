@@ -16,7 +16,8 @@ class Bullet(Unit):
         rx,
         ry,
         v_scale,
-        new_id=True
+        new_id=True,
+        map_size=None,
     ):
 
         super().__init__(
@@ -38,6 +39,11 @@ class Bullet(Unit):
 
         self.slow_health_regen = 0
         self.fast_health_regen = 0
+
+        if map_size:
+            self.map_size = map_size
+        else:
+            self.map_size = cfg.MAP_SIZE
 
     def add_score(self, score: int):
         self.tank.add_score(score)
@@ -105,13 +111,14 @@ class Bullet(Unit):
         self.y += self.total_vy
 
         # remove bullet if it goes out of map bounds
-        if not (-self.radius <= self.x <= cfg.MAP_SIZE + self.radius and -self.radius <= self.y <= cfg.MAP_SIZE + self.radius):
+        if not (-self.radius <= self.x <= self.map_size + self.radius and -self.radius <= self.y <= self.map_size + self.radius):
             self.hp = 0.0
 
 class BulletPool:
-    def __init__(self, max_bullets: int = 18):
+    def __init__(self, max_bullets: int = 18, map_size=None):
         self.max_bullets = max_bullets
         self.bullets: list[Bullet] = []
+        self.map_size = map_size
 
         # Pre-create bullet instances with unique IDs
         for _ in range(max_bullets):
@@ -125,6 +132,7 @@ class BulletPool:
                 rx=0.0,
                 ry=0.0,
                 v_scale=1.0,
+                map_size=self.map_size,
             )
             self.bullets.append(bullet)
 
@@ -146,7 +154,8 @@ class BulletPool:
                 rx = tank.rx,
                 ry = -tank.ry,
                 v_scale = tank.bullet_v_scale,
-                new_id=False
+                new_id=False,
+                map_size=self.map_size,
             )
             return bullet
         return None

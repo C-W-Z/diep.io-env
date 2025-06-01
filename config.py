@@ -44,11 +44,11 @@ class Config:
     POLYGON_BODY_DAMAGE             = {3: 8.0, 4: 8.0, 5: 12.0}
     POLYGON_SCORE                   = {3: 25 , 4: 10 , 5: 130}
     POLYGON_V_SCALE                 = 0.05
-    POLYGON_ROTATE_SPEED            = 0.001
+    POLYGON_ROTATE_SPEED            = 0.005
 
     BASE_BULLET_V_SCALE             = 2.0
     MIN_BULLET_V_MULTIPLIER         = 0.5
     BULLET_COLLISION_V_MULTIPLIER   = 0.6
-    BULLET_ALIVE_FRAMES             = 3 * FPS
+    BULLET_ALIVE_FRAMES             = 1 * FPS
 
 config = Config()
