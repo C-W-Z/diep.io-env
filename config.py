@@ -4,7 +4,7 @@ from dataclasses import dataclass
 class Config:
     # Constants
     FPS                             = 60
-    SCREEN_SIZE                     = 400      # Pixel size of render window
+    SCREEN_SIZE                     = 800      # Pixel size of render window
     MAP_SIZE                        = 80
     BORDER_SIZE                     = 5
     MAP_GRID                        = 32        # Size of collision grid
@@ -49,6 +49,6 @@ class Config:
     BASE_BULLET_V_SCALE             = 2.0
     MIN_BULLET_V_MULTIPLIER         = 0.5
     BULLET_COLLISION_V_MULTIPLIER   = 0.6
-    BULLET_ALIVE_FRAMES             = 1 * FPS
+    BULLET_ALIVE_FRAMES             = 3 * FPS
 
 config = Config()

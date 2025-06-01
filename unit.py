@@ -91,7 +91,7 @@ class Unit:
             self.hp_regen_frame -= 1
 
     # 在 Unit 类的 move 方法中调用
-    def move(self, dx: float, dy: float, map_size:float):
+    def move(self, dx: float, dy: float, map_size:float=cfg.MAP_SIZE):
         if not self.alive:
             return
         max_v = cfg.BASE_MAX_VELOCITY * self.v_scale

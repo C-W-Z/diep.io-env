@@ -13,11 +13,11 @@ from collision import CollisionHash
 from bullet import Bullet, BulletPool
 from utils import check_obs_in_space, draw_rectangle
 
-class DiepIOEnvBulletSkill(Env):
+class DiepIOEnvSkillBullet(Env):
     metadata = {"name": "diepio_v0"}
 
     def __init__(self, env_config: dict[str, Any] = {}):
-        super(DiepIOEnvBulletSkill, self).__init__()
+        super(DiepIOEnvSkillBullet, self).__init__()
         self.n_tanks = 1
         # self.n_polygons = int(np.floor(self.n_tanks * cfg.N_POLYGON_SCALE))
         self.n_polygons = 25
@@ -35,8 +35,8 @@ class DiepIOEnvBulletSkill(Env):
 
         # Observation space
         # === Part 1: Self state ===
-        low  = [0.0, 0.0, 1.0, -1.0, -1.0, -1.0, -1.0, 0.0,   0.0,  0] + [0] * 8
-        high = [1.0, 1.0, 1.6,  1.0,  1.0,  1.0,  1.0, 1.0, 278.0, 33] + [7] * 8
+        low  = [0.0, 0.0, -1.0, -1.0, -1.0, -1.0, 0.0,  0] + [0] * 8
+        high = [1.0, 1.0,  1.0,  1.0,  1.0,  1.0, 1.0, 33] + [7] * 8
 
         # === Part 2: Polygons ===
         polygon_low  = [-1.0, -1.0,                               0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
@@ -63,19 +63,7 @@ class DiepIOEnvBulletSkill(Env):
         )
 
         # Action space
-        self.action_space = spaces.Discrete(9 + 8)
-
-        self.action_map = {
-            0: [0, 0],  # NONE
-            1: [0, 1],  # W
-            2: [-1, 0], # A
-            3: [0, -1], # S
-            4: [1, 0],  # D
-            5: [-1, 1], # W+A
-            6: [1, 1],  # W+D
-            7: [-1, -1],# S+A
-            8: [1, -1]  # S+D
-        }
+        self.action_space = spaces.Discrete(9)
 
         # Initialize rendering
         if self.render_mode:
@@ -152,11 +140,11 @@ class DiepIOEnvBulletSkill(Env):
         # 1. Player's own state
         obs = [
             agent.x / self.map_size, agent.y / self.map_size, # Position [0.0, 1.0]
-            agent.radius,                                   # [0.5, 1.6]
+            # agent.radius,                                   # [0.5, 1.6]
             agent.total_vx, agent.total_vy,                 # Velocity [-1.0, 1.0]
             agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
             agent.hp / agent.max_hp,                        # Normalized health [0.0, 1.0]
-            agent.hp,                                       # raw HP [0.0, 278.0]
+            # agent.hp,                                       # raw HP [0.0, 278.0]
             # agent.level,                                    # Player level [1, 45]
             agent.skill_points,                             # Available skill points [0, 33]
             # Tank stats [0, 7]
@@ -655,9 +643,8 @@ class DiepIOEnvBulletSkill(Env):
             (2, 0): 8   # S+D
         }
 
-        if skill_index > 0:
-            return 8 + skill_index
-        return dx_dy_map[(dx_idx, dy_idx)]
+        action = skill_index
+        return action
 
     def _get_random_input(self):
         dx, dy, shoot = 0, 0, 0
@@ -906,6 +893,31 @@ class DiepIOEnvBulletSkill(Env):
                     return skill_index + 1
         return 0
 
+    def _auto_move(self):
+        tank = self.tanks[0]
+
+        min_distance = self.map_size * 2
+        best_dx, best_dy = 0, 0
+        for poly in self.polygons:
+            dx, dy = poly.x - tank.x, poly.y - tank.y
+            distance = np.hypot(dx, dy)
+            if distance < min_distance:
+                best_dx, best_dy = dx, dy
+                min_distance = distance
+
+        if min_distance < 5:
+            return 0, 0
+
+        if best_dx > 0:
+            best_dx = 1
+        elif best_dx < 0:
+            best_dx = -1
+        if best_dy > 0:
+            best_dy = 1
+        elif best_dy < 0:
+            best_dy = -1
+        return best_dx, best_dy
+
     def step(self, actions: dict[str, dict], skip_frame=False) -> tuple[
         dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
     ]:
@@ -921,13 +933,10 @@ class DiepIOEnvBulletSkill(Env):
             tank.regen_health()
             tank.update_counter()
 
-            if actions > 8:
-                skill_index = int(actions - 8)
-                dx, dy = 0, 0
-            else:
-                dx, dy = self.action_map[int(actions)]
-                skill_index = 0
+            dx, dy = self._auto_move()
             rx, ry, shoot = self._auto_shoot()
+
+            skill_index = actions
 
             # invalid move reward
             # if (dx < 0 and tank.x <= tank.radius + 1e-6 or
@@ -1070,7 +1079,7 @@ if __name__ == "__main__":
         "max_steps": 5000,
     }
 
-    env = DiepIOEnvBulletSkill(env_config)
+    env = DiepIOEnvSkillBullet(env_config)
 
     obs, _ = env.reset()
     print(env.observation_space)

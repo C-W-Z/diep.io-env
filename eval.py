@@ -5,8 +5,9 @@ from env_new import DiepIOEnvBasic
 from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
-
 from ray.tune.registry import register_env
+import imageio
+import pygame
 
 # Register environment
 def env_creator(env_config):
@@ -44,6 +45,12 @@ done = {"__all__": False}
 
 total_rewards = {agent: 0.0 for agent in env._agent_ids}
 
+frames = []
+
+frame = pygame.surfarray.array3d(env.env._get_frame(0, for_render=True))
+frame = frame.transpose([1, 0, 2])  # 轉換為 (height, width, 3)
+frames.append(frame)
+
 while not done["__all__"]:
     actions = {}
     for agent_id, agent_obs in obs.items():
@@ -70,9 +77,23 @@ while not done["__all__"]:
 
     obs, rewards, done, trunc, infos = env.step(actions)
 
+    if env.env.step_count % 4 == 0:
+        frame = pygame.surfarray.array3d(env.env._get_frame(0, for_render=True))
+        frame = frame.transpose([1, 0, 2])  # 轉換為 (height, width, 3)
+        frames.append(frame)
+
     for agent, reward in rewards.items():
         total_rewards[agent] += reward
 
     done["__all__"] |= trunc["__all__"]
 
 print("Total Rewards:", total_rewards)
+
+ray.shutdown()
+
+pygame.quit()
+
+# 保存為 GIF
+output_path = "diepio_simulation.gif"
+imageio.mimsave(output_path, frames, fps=100, optimize=True)
+print(f"GIF saved to {output_path}")

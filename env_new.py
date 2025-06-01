@@ -1075,13 +1075,13 @@ if __name__ == "__main__":
         rx, ry, shoot = env._auto_shoot("agent_0")
         action_0["d"][2] = shoot
         action_0["c"] = [rx, ry]
-        action_0["d"][3] = env._auto_choose_skill("agent_0", mode=0)
+        action_0["d"][3] = env._auto_choose_skill("agent_0", mode=1)
 
         action_1 = env._get_random_input()
         rx, ry, shoot = env._auto_shoot("agent_1")
         action_1["d"][2] = shoot
         action_1["c"] = [rx, ry]
-        action_1["d"][3] = env._auto_choose_skill("agent_1", mode=0)
+        action_1["d"][3] = env._auto_choose_skill("agent_1", mode=2)
 
         obs, rewards, dones, truncations, infos = env.step({
             "agent_0": action_0,
