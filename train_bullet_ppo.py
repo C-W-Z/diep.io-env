@@ -2,7 +2,7 @@ import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
-from env_bullet import DiepIOEnvBullet
+from diepio.env_bullet import DiepIOEnvBullet
 from ray.tune.registry import register_env
 
 # Register environment

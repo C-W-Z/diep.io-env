@@ -4,7 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 from torch.distributions import Categorical, Normal
-from env_cnn import DiepIOEnvBasic
+from diepio.env_cnn import DiepIOEnvBasic
 from wrappers import DiepIO_CNN_Wrapper
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt

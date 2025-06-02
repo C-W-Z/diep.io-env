@@ -1,9 +1,9 @@
 import numpy as np
 from enum import IntEnum
-from config import config as cfg
+from .config import config as cfg
 import itertools
 from numba import njit
-from utils import clip_scalar
+from .utils import clip_scalar
 
 class UnitType(IntEnum):
     Tank    = 0

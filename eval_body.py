@@ -1,11 +1,12 @@
 import ray
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
-from env_body import DiepIOEnvBody
+from diepio.env_body import DiepIOEnvBody
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
 import imageio
 import pygame
+import numpy as np
 
 from ray.tune.registry import register_env
 
@@ -56,6 +57,8 @@ while not done:
 
     # unbatch 動作: Tensor -> np.ndarray
     action = unbatch(result['actions'])[0].detach().cpu().numpy()
+    if np.random.rand() < 0.05:
+        action = np.random.randint(9)
 
     obs, reward, done, trunc, info = env.step(action)
 

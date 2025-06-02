@@ -1,7 +1,7 @@
 import numpy as np
 from enum import IntEnum
-from config import config as cfg
-from unit import Unit, UnitType
+from .config import config as cfg
+from .unit import Unit, UnitType
 from numba import njit
 
 class TST(IntEnum):

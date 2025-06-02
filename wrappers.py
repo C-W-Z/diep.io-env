@@ -129,7 +129,7 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
     def __init__(self, env_config: dict[str, Any] = {}):
         super(DiepIO_FixedOBS_Wrapper, self).__init__()
 
-        from env_new import DiepIOEnvBasic
+        from diepio.env_new import DiepIOEnvBasic
 
         self.env = DiepIOEnvBasic(env_config)
 
@@ -260,8 +260,8 @@ class DiepIO_FixedOBS_Wrapper(MultiAgentEnv):
         return super().close()
 
 def test_cnn_wrapper():
-    from env_cnn import DiepIOEnvBasic
-    from utils import check_obs_in_space
+    from diepio.env_cnn import DiepIOEnvBasic
+    from diepio.utils import check_obs_in_space
 
     env_config = {
         "n_tanks": 2,
@@ -294,7 +294,7 @@ def test_cnn_wrapper():
     env.close()
 
 def test_fixedobs_wrapper():
-    from utils import check_obs_in_space
+    from diepio.utils import check_obs_in_space
 
     env_config = {
         "n_tanks": 1,

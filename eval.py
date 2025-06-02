@@ -1,7 +1,7 @@
 import ray
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
-from env_new import DiepIOEnvBasic
+from diepio.env_new import DiepIOEnvBasic
 from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch

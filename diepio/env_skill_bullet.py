@@ -5,13 +5,13 @@ import pygame
 import sys
 from typing import Union, Any
 
-from config import config as cfg
-from unit import UnitType, Unit
-from tank import Tank, TST
-from polygon import Polygon
-from collision import CollisionHash
-from bullet import Bullet, BulletPool
-from utils import check_obs_in_space, draw_rectangle
+from .config import config as cfg
+from .unit import UnitType, Unit
+from .tank import Tank, TST
+from .polygon import Polygon
+from .collision import CollisionHash
+from .bullet import Bullet, BulletPool
+from .utils import check_obs_in_space, draw_rectangle
 
 class DiepIOEnvSkillBullet(Env):
     metadata = {"name": "diepio_v0"}

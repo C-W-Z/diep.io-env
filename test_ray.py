@@ -2,7 +2,7 @@ import ray
 ray.init()
 print("Ray initialized successfully")
 
-from env_new import DiepIOEnvBasic
+from diepio.env_new import DiepIOEnvBasic
 from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.rllib.utils.pre_checks.env import check_multiagent_environments
 env = DiepIO_FixedOBS_Wrapper({

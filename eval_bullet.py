@@ -1,7 +1,7 @@
 import ray
 import torch
 from ray.rllib.algorithms.algorithm import Algorithm
-from env_bullet import DiepIOEnvBullet
+from diepio.env_bullet import DiepIOEnvBullet
 from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.spaces.space_utils import unbatch
 import imageio

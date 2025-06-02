@@ -1,7 +1,7 @@
 import ray
 from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
-from env_new import DiepIOEnvBasic
+from diepio.env_new import DiepIOEnvBasic
 from wrappers import DiepIO_FixedOBS_Wrapper
 from ray.tune.registry import register_env
 

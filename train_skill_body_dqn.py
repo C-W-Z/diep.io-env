@@ -2,7 +2,7 @@ import ray
 from ray import tune
 from ray.rllib.algorithms.dqn import DQNConfig
 from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
-from env_skill_body import DiepIOEnvSkillBody
+from diepio.env_skill_body import DiepIOEnvSkillBody
 from ray.tune.registry import register_env
 
 # Register environment

@@ -1,6 +1,6 @@
 import numpy as np
-from unit import Unit, UnitType
-from config import config as cfg
+from .unit import Unit, UnitType
+from .config import config as cfg
 from numba import njit
 
 class Polygon(Unit):

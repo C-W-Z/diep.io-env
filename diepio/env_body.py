@@ -5,55 +5,48 @@ import pygame
 import sys
 from typing import Union, Any
 
-from config import config as cfg
-from unit import UnitType, Unit
-from tank import Tank, TST
-from polygon import Polygon
-from collision import CollisionHash
-from bullet import Bullet, BulletPool
-from utils import check_obs_in_space, draw_rectangle
+from .config import config as cfg
+from .unit import UnitType, Unit
+from .tank import Tank, TST
+from .polygon import Polygon
+from .collision import CollisionHash
+from .bullet import Bullet, BulletPool
+from .utils import check_obs_in_space, draw_rectangle
 
-class DiepIOEnvBullet(Env):
+class DiepIOEnvBody(Env):
     metadata = {"name": "diepio_v0"}
 
     def __init__(self, env_config: dict[str, Any] = {}):
-        super(DiepIOEnvBullet, self).__init__()
+        super(DiepIOEnvBody, self).__init__()
         self.n_tanks = 1
         # self.n_polygons = int(np.floor(self.n_tanks * cfg.N_POLYGON_SCALE))
-        self.n_polygons = 25
+        self.n_polygons = 12
         self.render_mode = env_config.get("render_mode", False)
         self.max_steps = env_config.get("max_steps", 10000)
         self.skip_frames = env_config.get("skip_frames", 1)
         self.skip_frames_counter = 0
 
-        self.map_size = 80
+        self.map_size = 40
         self.screen_size = 400
+        cfg.POLYGON_V_SCALE      = 0.01
+        cfg.POLYGON_ROTATE_SPEED = 0.005
 
         # Maximum number of polygons and tanks to include in the observation
-        self.obs_max_polygons = 5
-        self.obs_max_bullets = 3
+        self.obs_max_polygons = 3
 
         # Observation space
         # === Part 1: Self state ===
-        low  = [0.0, 0.0, 1.0, -1.0, -1.0, -1.0, -1.0, 0.0,   0.0] + [0] * 8
-        high = [1.0, 1.0, 1.6,  1.0,  1.0,  1.0,  1.0, 1.0, 278.0] + [7] * 8
+        low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,   0.0] + [0] * 8
+        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 278.0] + [7] * 8
 
         # === Part 2: Polygons ===
         polygon_low  = [-1.0, -1.0,                               0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
         polygon_high = [ 1.0,  1.0, np.sqrt(2) * self.map_size + 1e-6, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
-        # === Part 3: Bullets ===
-        bullet_low  = [-1.0, -1.0,                               0.0, -1.0, -1.0]
-        bullet_high = [ 1.0,  1.0, np.sqrt(2) * self.map_size + 1e-6,  1.0,  1.0]
-        self.bullet_features = len(bullet_low)
-
         # === Padding sizes ===
         low += polygon_low * self.obs_max_polygons
         high += polygon_high * self.obs_max_polygons
-
-        low += bullet_low * self.obs_max_bullets
-        high += bullet_high * self.obs_max_bullets
 
         # === Observation space ===
         self.observation_space = spaces.Box(
@@ -92,8 +85,6 @@ class DiepIOEnvBullet(Env):
     def reset(self, *, seed=None, options=None) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, Any]]:
         Unit.reset_id_iter()
 
-        self.angle = 0
-
         self.step_count = 0
 
         # Mapping of ID -> unit
@@ -104,8 +95,8 @@ class DiepIOEnvBullet(Env):
 
         self.tanks = [
             Tank(
-                x=self.map_size / 2,
-                y=self.map_size / 2,
+                x=np.random.uniform(cfg.BORDER_SIZE, self.map_size-cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, self.map_size-cfg.BORDER_SIZE),
                 score=0,
             )
             for _ in range(self.n_tanks)
@@ -118,7 +109,6 @@ class DiepIOEnvBullet(Env):
             )
             for _ in range(self.n_polygons)
         ]
-        self.bullet_pool = BulletPool(9, map_size=self.map_size)
 
         self.prev_tanks_score = 0
         self.no_reward_frames = 0
@@ -154,7 +144,7 @@ class DiepIOEnvBullet(Env):
             agent.x / self.map_size, agent.y / self.map_size, # Position [0.0, 1.0]
             agent.radius,                                   # [0.5, 1.6]
             agent.total_vx, agent.total_vy,                 # Velocity [-1.0, 1.0]
-            agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
+            # agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
             agent.hp / agent.max_hp,                        # Normalized health [0.0, 1.0]
             agent.hp,                                       # raw HP [0.0, 278.0]
             # agent.level,                                    # Player level [1, 45]
@@ -171,11 +161,11 @@ class DiepIOEnvBullet(Env):
         ]
 
         # Observation range
-        observation_size = agent.observation_size
-        min_x = agent.x - observation_size / 2
-        max_x = agent.x + observation_size / 2
-        min_y = agent.y - observation_size / 2
-        max_y = agent.y + observation_size / 2
+        # observation_size = agent.observation_size
+        # min_x = agent.x - observation_size / 2
+        # max_x = agent.x + observation_size / 2
+        # min_y = agent.y - observation_size / 2
+        # max_y = agent.y + observation_size / 2
 
         # 2. Collect and sort polygons by distance
         polygon_data = []
@@ -204,38 +194,11 @@ class DiepIOEnvBullet(Env):
         # 3. Create polygon observation array
         polygon_obs = np.zeros((self.obs_max_polygons, self.polygon_features), dtype=np.float32)
         for i, (_, x, y, features) in enumerate(selected_polygons):
-            if min_x <= x <= max_x and min_y <= y <= max_y:
-                polygon_obs[i, :] = np.array(features, dtype=np.float32)
+            # if min_x <= x <= max_x and min_y <= y <= max_y:
+            polygon_obs[i, :] = np.array(features, dtype=np.float32)
 
-        # 4. Collect and sort bullet by distance
-        bullet_data = []
-        for obj in self.bullet_pool.bullets:
-            if not obj.alive:
-                continue
-            dx, dy = obj.x - agent.x, obj.y - agent.y
-            distance = np.hypot(dx, dy)
-            features = np.array([
-                dx / max(distance, 1e-6),
-                dy / max(distance, 1e-6),
-                distance,
-                # obj.radius,
-                obj.total_vx,
-                obj.total_vy,
-            ], dtype=np.float32)
-            bullet_data.append((distance, obj.x, obj.y, features))
-
-        # Sort by distance and select top k
-        bullet_data.sort(key=lambda x: x[0])
-        selected_bullets = bullet_data[:self.obs_max_bullets]
-
-        # 5. Create bullet observation array
-        bullet_obs = np.zeros((self.obs_max_bullets, self.bullet_features), dtype=np.float32)
-        for i, (_, x, y, features) in enumerate(selected_bullets):
-            if min_x <= x <= max_x and min_y <= y <= max_y:
-                bullet_obs[i, :] = np.array(features, dtype=np.float32)
-
-        # 6. Combine observations
-        return np.concatenate([obs, polygon_obs.flatten(), bullet_obs.flatten()], dtype=np.float32)
+        # 4. Combine observations
+        return np.concatenate([obs, polygon_obs.flatten()], dtype=np.float32)
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
         scale = self.screen_size / 800
@@ -504,31 +467,31 @@ class DiepIOEnvBullet(Env):
                     (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, max(1, self.screen_size / 200))
                 )
 
-        for bullet in self.bullet_pool.bullets:
-            if not bullet.alive:
-                continue
-            rel_x = bullet.x - center_x
-            rel_y = bullet.y - center_y
-            pixel_x = int(screen_half + rel_x * grid_size)
-            pixel_y = int(screen_half + rel_y * grid_size)
-            if 0 <= pixel_x < self.screen_size and 0 <= pixel_y < self.screen_size:
-                color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == agent.id else (255, 0, 0)
-                # color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
-                if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
-                    color = (255, 255, 255)
-                pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
+        # for bullet in self.bullet_pool.bullets:
+        #     if not bullet.alive:
+        #         continue
+        #     rel_x = bullet.x - center_x
+        #     rel_y = bullet.y - center_y
+        #     pixel_x = int(screen_half + rel_x * grid_size)
+        #     pixel_y = int(screen_half + rel_y * grid_size)
+        #     if 0 <= pixel_x < self.screen_size and 0 <= pixel_y < self.screen_size:
+        #         color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == agent_id else (255, 0, 0)
+        #         # color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
+        #         if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
+        #             color = (255, 255, 255)
+        #         pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
-                # Draw HP bar
-                if for_render and bullet.hp < bullet.max_hp:
-                    half_unit_size = grid_size * bullet.radius
-                    pygame.draw.rect(
-                        surface, (0, 0, 0),
-                        (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
-                    )
-                    pygame.draw.rect(
-                        surface, (0, 216, 0),
-                        (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, max(1, self.screen_size / 200))
-                    )
+        #         # Draw HP bar
+        #         if for_render and bullet.hp < bullet.max_hp:
+        #             half_unit_size = grid_size * bullet.radius
+        #             pygame.draw.rect(
+        #                 surface, (0, 0, 0),
+        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
+        #             )
+        #             pygame.draw.rect(
+        #                 surface, (0, 216, 0),
+        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, max(1, self.screen_size / 200))
+        #             )
 
         if for_render:
             # Render skill panel for agent 0
@@ -690,7 +653,7 @@ class DiepIOEnvBullet(Env):
             (2, 0): 8   # S+D
         }
 
-        action = [rx, ry]
+        action = dx_dy_map[(dx_idx, dy_idx)]
         return action
 
     def _handle_collisions(self):
@@ -716,7 +679,7 @@ class DiepIOEnvBullet(Env):
                     self.__polygon_on_polygon(poly0, thing)
 
         # handle collisions between bullets and other objects
-        self._handle_bullet_collisions()
+        # self._handle_bullet_collisions()
 
     def _handle_bullet_collisions(self):
         """Handle collisions between bullets and tanks/polygons."""
@@ -860,6 +823,8 @@ class DiepIOEnvBullet(Env):
             poly.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
+            if tank.hp > 25:
+                self._rewards += 0.1
 
             if tank.last_collider_id == poly.id:
                 tank.same_collider_counter += 1
@@ -921,16 +886,14 @@ class DiepIOEnvBullet(Env):
             tank.update_counter()
 
             dx, dy = self.action_map[int(actions)]
-            rx, ry, shoot = self._auto_shoot()
-
-            skill_index = self._auto_choose_skill(mode=1)
+            skill_index = self._auto_choose_skill(mode=2)
 
             # invalid move reward
-            # if (dx < 0 and tank.x <= tank.radius + 1e-6 or
-            #     dx > 0 and tank.x >= self.map_size - tank.radius - 1e-6 or
-            #     dy < 0 and tank.y <= tank.radius + 1e-6 or
-            #     dy > 0 and tank.y >= self.map_size - tank.radius - 1e-6):
-            #     self._rewards -= 0.01
+            if (dx < 0 and tank.x <= tank.radius + 1e-6 or
+                dx > 0 and tank.x >= self.map_size - tank.radius - 1e-6 or
+                dy < 0 and tank.y <= tank.radius + 1e-6 or
+                dy > 0 and tank.y >= self.map_size - tank.radius - 1e-6):
+                self._rewards -= 0.01
 
             old_x, old_y = tank.x, tank.y
 
@@ -943,25 +906,25 @@ class DiepIOEnvBullet(Env):
                     self._rewards -= 0.002
 
             # avoid zero-division
-            # if dx != 0 or dy != 0:
-            #     magnitude = np.hypot(dx, dy)
-            #     dx, dy = dx / magnitude, dy / magnitude
+            if dx != 0 or dy != 0:
+                magnitude = np.hypot(dx, dy)
+                dx, dy = dx / magnitude, dy / magnitude
 
             # avoid zero-division
-            if rx != 0 or ry != 0:
-                magnitude = np.hypot(rx, ry)
-                tank.rx, tank.ry = rx / magnitude, ry / magnitude
+            # if rx != 0 or ry != 0:
+            #     magnitude = np.hypot(rx, ry)
+            #     tank.rx, tank.ry = rx / magnitude, ry / magnitude
 
             tank.move(dx, dy, self.map_size)
             self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
-            if shoot > 0.5 and tank.reload_counter <= 0:
-                new_bullet = self.bullet_pool.get_new_bullet(tank)
-                self.all_things[new_bullet.id] = new_bullet
-                tank.reload_counter = tank.reload_frames
+            # if shoot > 0.5 and tank.reload_counter <= 0:
+            #     new_bullet = self.bullet_pool.get_new_bullet(tank)
+            #     self.all_things[new_bullet.id] = new_bullet
+            #     tank.reload_counter = tank.reload_frames
 
-                tank.recoil_vx += -1 * tank.rx
-                tank.recoil_vy -= -1 * tank.ry
+            #     tank.recoil_vx += -1 * tank.rx
+            #     tank.recoil_vy -= -1 * tank.ry
 
         for poly in self.polygons:
             old_x, old_y = poly.x, poly.y
@@ -982,16 +945,14 @@ class DiepIOEnvBullet(Env):
                 )
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
         # Update bullets
-        for bullet in self.bullet_pool.bullets:  # iterate over a copy
-            if not bullet.alive:
-                continue
-            bullet.update_counter()
-            bullet.move()
-            if not bullet.alive:
-                # remove from environment
-                del self.all_things[bullet.id]
-
-        # print(sum(bullet.alive for bullet in self.bullet_pool.bullets))
+        # for bullet in self.bullet_pool.bullets:  # iterate over a copy
+        #     if not bullet.alive:
+        #         continue
+        #     bullet.update_counter()
+        #     bullet.move()
+        #     if not bullet.alive:
+        #         # remove from environment
+        #         del self.all_things[bullet.id]
 
         self._handle_collisions()
 
@@ -1066,7 +1027,7 @@ if __name__ == "__main__":
         "max_steps": 5000,
     }
 
-    env = DiepIOEnvBullet(env_config)
+    env = DiepIOEnvBody(env_config)
 
     obs, _ = env.reset()
     print(env.observation_space)

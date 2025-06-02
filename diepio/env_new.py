@@ -1,50 +1,69 @@
-# from ray.rllib.env import BaseEnv
+from ray.rllib.env import MultiAgentEnv
 import numpy as np
-from gymnasium import spaces, Env
+from gymnasium import spaces
 import pygame
 import sys
 from typing import Union, Any
 
-from config import config as cfg
-from unit import UnitType, Unit
-from tank import Tank, TST
-from polygon import Polygon
-from collision import CollisionHash
-from bullet import Bullet, BulletPool
-from utils import check_obs_in_space, draw_rectangle
+from .config import config as cfg
+from .unit import UnitType, Unit
+from .tank import Tank, TST
+from .polygon import Polygon
+from .collision import CollisionHash
+from .bullet import Bullet, BulletPool
+from .utils import check_obs_in_space, draw_rectangle
 
-class DiepIOEnvBody(Env):
+class DiepIOEnvBasic(MultiAgentEnv):
     metadata = {"name": "diepio_v0"}
 
     def __init__(self, env_config: dict[str, Any] = {}):
-        super(DiepIOEnvBody, self).__init__()
-        self.n_tanks = 1
+        super(DiepIOEnvBasic, self).__init__()
+        self.n_tanks = env_config.get("n_tanks", 2)
         # self.n_polygons = int(np.floor(self.n_tanks * cfg.N_POLYGON_SCALE))
-        self.n_polygons = 12
+        self.n_polygons = 25
         self.render_mode = env_config.get("render_mode", False)
-        self.max_steps = env_config.get("max_steps", 10000)
+        self.max_steps = env_config.get("max_steps", 1000000)
         self.skip_frames = env_config.get("skip_frames", 1)
         self.skip_frames_counter = 0
 
-        self.map_size = 40
-        self.screen_size = 400
-
         # Maximum number of polygons and tanks to include in the observation
-        self.obs_max_polygons = 12
+        self.obs_max_polygons = 25
+        self.obs_max_tanks = 1
+        self.obs_max_bullets = 18
 
-        # Observation space
+        # Agent IDs
+        self._agent_ids = [f"agent_{i}" for i in range(self.n_tanks)]
+        self.agents = self.possible_agents = self._agent_ids
+
+        # Observation space (per agent)
         # === Part 1: Self state ===
-        low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,   0.0] + [0] * 8
-        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 278.0] + [7] * 8
+        low  = [0.0, 0.0, 0.0, -1.0, -1.0, -1.0, -1.0, 0.0,  1.0,  0.0] + [0] * 8
+        high = [1.0, 1.0, 1.6,  1.0,  1.0,  1.0,  1.0, 1.0, 45.0, 33.0] + [7] * 8
 
         # === Part 2: Polygons ===
-        polygon_low  = [-1.0, -1.0,                               0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
-        polygon_high = [ 1.0,  1.0, np.sqrt(2) * self.map_size + 1e-6, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
+        polygon_low  = [-50.0, -50.0,   0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
+        polygon_high = [ 50.0,  50.0, 70.72, 1.6,  1.0,  1.0, 1.0, 1.0, 1.0, 1.0]
         self.polygon_features = len(polygon_low)
 
+        # === Part 3: Other Tanks ===
+        tank_low  = [-50.0, -50.0,   0.0, 0.0, -1.0, -1.0, 0.0,  0.0]
+        tank_high = [ 50.0,  50.0, 70.72, 1.6,  1.0,  1.0, 1.0, 45.0]
+        self.tank_features = len(tank_low)
+
+        # === Part 4: Bullets ===
+        bullet_low  = [-50.0, -50.0,   0.0, 0.0, -1.0, -1.0, 0.0]
+        bullet_high = [ 50.0,  50.0, 70.72, 1.6,  1.0,  1.0, 1.0]
+        self.bullet_features = len(bullet_low)
+
         # === Padding sizes ===
+        low += tank_low * self.obs_max_tanks
+        high += tank_high * self.obs_max_tanks
+
         low += polygon_low * self.obs_max_polygons
         high += polygon_high * self.obs_max_polygons
+
+        low += bullet_low * self.obs_max_bullets
+        high += bullet_high * self.obs_max_bullets
 
         # === Observation space ===
         self.observation_space = spaces.Box(
@@ -53,25 +72,25 @@ class DiepIOEnvBody(Env):
             dtype=np.float32
         )
 
-        # Action space
-        self.action_space = spaces.Discrete(9)
+        # Action space (per agent)
+        self.action_space = spaces.Dict({
+            "d": spaces.MultiDiscrete([3, 3, 2, 9]),                       # discrete
+            "c": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # continuous
+        })
 
-        self.action_map = {
-            0: [0, 0],  # NONE
-            1: [0, 1],  # W
-            2: [-1, 0], # A
-            3: [0, -1], # S
-            4: [1, 0],  # D
-            5: [-1, 1], # W+A
-            6: [1, 1],  # W+D
-            7: [-1, -1],# S+A
-            8: [1, -1]  # S+D
+        # Create agent space dicts for RLlib multi-agent API compatibility
+
+        self.observation_spaces = {
+            agent: self.observation_space for agent in self._agent_ids
+        }
+        self.action_spaces = {
+            agent: self.action_space for agent in self._agent_ids
         }
 
         # Initialize rendering
         if self.render_mode:
             pygame.init()
-            self.screen = pygame.display.set_mode((self.screen_size * self.n_tanks, self.screen_size))
+            self.screen = pygame.display.set_mode((cfg.SCREEN_SIZE * self.n_tanks, cfg.SCREEN_SIZE))
             self.clock = pygame.time.Clock()
 
         self.reset()
@@ -89,27 +108,28 @@ class DiepIOEnvBody(Env):
         self.all_things: dict[int, Union[Tank, Polygon, Bullet]] = {}
 
         # Collision registry
-        self.colhash = CollisionHash(self.map_size, self.map_size * 4 // 10)
+        self.colhash = CollisionHash(cfg.MAP_SIZE, cfg.MAP_GRID)
 
         self.tanks = [
             Tank(
-                x=np.random.uniform(cfg.BORDER_SIZE, self.map_size-cfg.BORDER_SIZE),
-                y=np.random.uniform(cfg.BORDER_SIZE, self.map_size-cfg.BORDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE-cfg.BORDER_SIZE),
                 score=0,
             )
             for _ in range(self.n_tanks)
         ]
         self.polygons = [
             Polygon(
-                x=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
-                y=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
+                x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
                 side=self._rand_poly_side()
             )
             for _ in range(self.n_polygons)
         ]
+        self.bullet_pool = BulletPool(18) # n_tanks * 9
 
-        self.prev_tanks_score = 0
-        self.no_reward_frames = 0
+        self.prev_tanks_score = [tank.score for tank in self.tanks]
+        self.no_reward_frames = [0 for _ in self.tanks]
 
         # add all objects to the map
         # add all objects to the collision registry
@@ -124,29 +144,27 @@ class DiepIOEnvBody(Env):
             self.colhash.add(poly.x, poly.y, poly.id)
 
         # Initialize RLlib dictionaries
-        self._dones = False
-        self._infos = {}
+        self._dones = {agent: False for agent in self._agent_ids}
+        self._dones["__all__"] = False
+        self._infos = {agent: {} for agent in self._agent_ids}
 
-        observations = self._get_obs()
+        observations = {agent: self._get_obs(i) for i, agent in enumerate(self._agent_ids)}
         if self.render_mode:
             self.render()
         return observations, self._infos
 
-    def _get_obs(self):
-        # return pygame.surfarray.array3d(self._get_frame(for_render=False))
-
-        agent: Tank = self.tanks[0]
+    def _get_obs(self, agent_id):
+        agent: Tank = self.tanks[agent_id]
 
         # 1. Player's own state
         obs = [
-            agent.x / self.map_size, agent.y / self.map_size, # Position [0.0, 1.0]
+            agent.x / cfg.MAP_SIZE, agent.y / cfg.MAP_SIZE, # Position [0.0, 1.0]
             agent.radius,                                   # [0.5, 1.6]
             agent.total_vx, agent.total_vy,                 # Velocity [-1.0, 1.0]
-            # agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
+            agent.rx, agent.ry,                             # Direction [-1.0, 1.0]
             agent.hp / agent.max_hp,                        # Normalized health [0.0, 1.0]
-            agent.hp,                                       # raw HP [0.0, 278.0]
-            # agent.level,                                    # Player level [1, 45]
-            # agent.skill_points,                             # Available skill points [0, 33]
+            agent.level,                                    # Player level [1, 45]
+            agent.skill_points,                             # Available skill points [0, 33]
             # Tank stats [0, 7]
             agent.stats[TST.HealthRegen],                   # Health regeneration level
             agent.stats[TST.MaxHealth],                     # Max health level
@@ -165,41 +183,61 @@ class DiepIOEnvBody(Env):
         min_y = agent.y - observation_size / 2
         max_y = agent.y + observation_size / 2
 
-        # 2. Collect and sort polygons by distance
-        polygon_data = []
-        for obj in self.polygons:
+        # 2. Nearby polygons in the screen
+        polygon_obs = np.zeros((self.obs_max_polygons, self.polygon_features), dtype=np.float32)
+        for i, obj in enumerate(self.polygons):
             if not obj.alive:
                 continue
             dx, dy = obj.x - agent.x, obj.y - agent.y
-            distance = np.hypot(dx, dy)
-            side_one_hot = [0, 0, 0]
-            side_one_hot[obj.side - 3] = 1
-            features = [
-                np.float32(dx / max(distance, 1e-6)),
-                np.float32(dy / max(distance, 1e-6)),
-                np.float32(distance),
-                np.float32(obj.radius),
-                np.float32(obj.total_vx),
-                np.float32(obj.total_vy),
-                np.float32(obj.hp / obj.max_hp),
-            ] + side_one_hot
-            polygon_data.append((distance, obj.x, obj.y, features))
+            # Check if the polygon is in the screen
+            if min_x <= obj.x <= max_x and min_y <= obj.y <= max_y:
+                side_one_hot = [0, 0, 0]        # type of sides [0, 1]
+                side_one_hot[obj.side - 3] = 1  # obj.side is in [3, 4, 5]
+                polygon_obs[i, :] = np.array([
+                    dx, dy,                     # Relative position [-50.0, 50.0]
+                    np.hypot(dx, dy),           # distance [0, 70.72]
+                    obj.radius,                 # [0.5, 1.6]
+                    obj.total_vx, obj.total_vy, # [-1.0, 1.0]
+                    obj.hp / obj.max_hp,        # Normalized health [0.0, 1.0]
+                ] + side_one_hot, dtype=np.float32)
 
-        # Sort by distance and select top k
-        polygon_data.sort(key=lambda x: x[0])
-        selected_polygons = polygon_data[:self.obs_max_polygons]
+        # 3. Other players in the screen
+        tanks_obs = np.zeros((self.obs_max_tanks, self.tank_features), np.float32)
+        for other_id, other_tank in enumerate(self.tanks):
+            if other_id == agent_id or not other_tank.alive:
+                continue
+            i = other_id - 1 if other_id > agent_id else other_id
+            dx, dy = other_tank.x - agent.x, other_tank.y - agent.y
+            # Check if the other tank is in the screen
+            if min_x <= other_tank.x <= max_x and min_y <= other_tank.y <= max_y:
+                tanks_obs[i, :] = np.array([
+                    dx, dy,                                     # Relative position [-50.0, 50.0]
+                    np.hypot(dx, dy),                           # distance [0, 70.72]
+                    other_tank.radius,                          # [0.5, 1.6]
+                    other_tank.total_vx, other_tank.total_vy,   # [-1.0, 1.0]
+                    other_tank.hp / other_tank.max_hp,          # Normalized health [0.0, 1.0]
+                    other_tank.level,                           # Level of the other tank [1, 45]
+                ], dtype=np.float32)
 
-        # 3. Create polygon observation array
-        polygon_obs = np.zeros((self.obs_max_polygons, self.polygon_features), dtype=np.float32)
-        for i, (_, x, y, features) in enumerate(selected_polygons):
-            if min_x <= x <= max_x and min_y <= y <= max_y:
-                polygon_obs[i, :] = np.array(features, dtype=np.float32)
+        bullet_obs = np.zeros((self.obs_max_bullets, self.bullet_features), np.float32)
+        for i, bullet in enumerate(self.bullet_pool.bullets):
+            if not bullet.alive:
+                continue
+            dx, dy = bullet.x - agent.x, bullet.y - agent.y
+            # Check if the bullet is in the screen
+            if min_x <= bullet.x <= max_x and min_y <= bullet.y <= max_y:
+                bullet_obs[i, :] = np.array([
+                    dx, dy,                                     # Relative position [-50.0, 50.0]
+                    np.hypot(dx, dy),                           # distance [0, 70.72]
+                    bullet.radius,                              # [0.5, 1.6]
+                    bullet.total_vx, bullet.total_vy,           # [-1.0, 1.0]
+                    1 if bullet.tank.id != agent.id else 0      # Is enemy bullet or not [0, 1]
+                ])
 
-        # 4. Combine observations
-        return np.concatenate([obs, polygon_obs.flatten()], dtype=np.float32)
+        return np.concatenate([obs, tanks_obs.flatten(), polygon_obs.flatten(), bullet_obs.flatten()], dtype=np.float32)
 
     def _render_skill_panel(self, tank: Tank, screen, offset_x, offset_y):
-        scale = self.screen_size / 800
+        scale = cfg.SCREEN_SIZE / 800
 
         # 1. prepare fonts and dynamic header sizes
         font = pygame.font.Font(None, int(24 * scale))
@@ -227,7 +265,7 @@ class DiepIOEnvBody(Env):
         panel_height = header_height + len(skills) * line_height + progress_bar_h + bottom_padding
 
         # if panel would go off-screen, shift it up
-        screen_h = self.screen_size
+        screen_h = cfg.SCREEN_SIZE
         if offset_y + panel_height > screen_h:
             offset_y = max(0, screen_h - panel_height)
 
@@ -287,62 +325,62 @@ class DiepIOEnvBody(Env):
 
             self.skill_buttons.append((btn, i))
 
-    def _get_frame(self, for_render=False):
+    def _get_frame(self, agent_id, for_render=False):
         # Create a SCREEN_SIZE x SCREEN_SIZE surface
-        surface = pygame.Surface((self.screen_size, self.screen_size))
+        surface = pygame.Surface((cfg.SCREEN_SIZE, cfg.SCREEN_SIZE))
         surface.fill("#eeeeee")  # White background
 
         # Center on the agent
-        agent = self.tanks[0]
+        agent = self.tanks[agent_id]
         center_x, center_y = agent.x, agent.y
         observation_size = agent.observation_size
 
         # Calculate scale: SCREEN_SIZE pixels cover observation_size map units
-        grid_size = self.screen_size / observation_size  # e.g., 1000 / 40 = 25
-        screen_half = self.screen_size // 2  # 500
+        grid_size = cfg.SCREEN_SIZE / observation_size  # e.g., 1000 / 40 = 25
+        screen_half = cfg.SCREEN_SIZE // 2  # 500
 
         # Draw black rectangles for areas outside map boundaries
         left_boundary = int(screen_half + (cfg.BORDER_SIZE - center_x) * grid_size)  # x = BOARDER_SIZE
-        right_boundary = int(screen_half + (self.map_size - cfg.BORDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
+        right_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BORDER_SIZE - center_x) * grid_size)  # x = MAP_SIZE - BOARDER_SIZE
         top_boundary = int(screen_half + (cfg.BORDER_SIZE - center_y) * grid_size)  # y = BOARDER_SIZE
-        bottom_boundary = int(screen_half + (self.map_size - cfg.BORDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
+        bottom_boundary = int(screen_half + (cfg.MAP_SIZE - cfg.BORDER_SIZE - center_y) * grid_size)  # y = MAP_SIZE - BOARDER_SIZE
 
         black_color = (191, 191, 191)
         if left_boundary > 0:
-            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, self.screen_size))
-        if right_boundary < self.screen_size:
-            pygame.draw.rect(surface, black_color, (right_boundary, 0, self.screen_size - right_boundary, self.screen_size))
+            pygame.draw.rect(surface, black_color, (0, 0, left_boundary, cfg.SCREEN_SIZE))
+        if right_boundary < cfg.SCREEN_SIZE:
+            pygame.draw.rect(surface, black_color, (right_boundary, 0, cfg.SCREEN_SIZE - right_boundary, cfg.SCREEN_SIZE))
         if top_boundary > 0:
-            pygame.draw.rect(surface, black_color, (0, 0, self.screen_size, top_boundary))
-        if bottom_boundary < self.screen_size:
-            pygame.draw.rect(surface, black_color, (0, bottom_boundary, self.screen_size, self.screen_size - bottom_boundary))
+            pygame.draw.rect(surface, black_color, (0, 0, cfg.SCREEN_SIZE, top_boundary))
+        if bottom_boundary < cfg.SCREEN_SIZE:
+            pygame.draw.rect(surface, black_color, (0, bottom_boundary, cfg.SCREEN_SIZE, cfg.SCREEN_SIZE - bottom_boundary))
 
         # Draw grid lines (spacing = 1 map units)
         if for_render:
             grid_color = (150, 150, 150)  # Light gray
             # Calculate visible grid lines
             min_x = max(0, center_x - observation_size / 2)
-            max_x = min(self.map_size, center_x + observation_size / 2)
+            max_x = min(cfg.MAP_SIZE, center_x + observation_size / 2)
             min_y = max(0, center_y - observation_size / 2)
-            max_y = min(self.map_size, center_y + observation_size / 2)
+            max_y = min(cfg.MAP_SIZE, center_y + observation_size / 2)
             # Grid line positions
             x_grid = np.arange(np.ceil(min_x), np.floor(max_x) + 1)
             y_grid = np.arange(np.ceil(min_y), np.floor(max_y) + 1)
 
             left_boundary = int(screen_half + (0 - center_x) * grid_size)  # x = 0
-            right_boundary = int(screen_half + (self.map_size - center_x) * grid_size)  # x = MAP_SIZE
+            right_boundary = int(screen_half + (cfg.MAP_SIZE - center_x) * grid_size)  # x = MAP_SIZE
             top_boundary = int(screen_half + (0 - center_y) * grid_size)  # y = 0
-            bottom_boundary = int(screen_half + (self.map_size - center_y) * grid_size)  # y = MAP_SIZE
+            bottom_boundary = int(screen_half + (cfg.MAP_SIZE - center_y) * grid_size)  # y = MAP_SIZE
 
             # Draw vertical lines
             for x in x_grid:
                 pixel_x = int(screen_half + (x - center_x) * grid_size)
-                if 0 <= pixel_x < self.screen_size:
+                if 0 <= pixel_x < cfg.SCREEN_SIZE:
                     pygame.draw.line(surface, grid_color, (pixel_x, top_boundary), (pixel_x, bottom_boundary), 1)
             # Draw horizontal lines
             for y in y_grid:
                 pixel_y = int(screen_half + (y - center_y) * grid_size)
-                if 0 <= pixel_y < self.screen_size:
+                if 0 <= pixel_y < cfg.SCREEN_SIZE:
                     pygame.draw.line(surface, grid_color, (left_boundary, pixel_y), (right_boundary, pixel_y), 1)
 
         # Draw all polygons
@@ -387,8 +425,8 @@ class DiepIOEnvBody(Env):
             max_y = max(vertices_y)
 
             # Check if the polygon's bounding box intersects with the screen
-            if (max_x < 0 or min_x >= self.screen_size or
-                max_y < 0 or min_y >= self.screen_size):
+            if (max_x < 0 or min_x >= cfg.SCREEN_SIZE or
+                max_y < 0 or min_y >= cfg.SCREEN_SIZE):
                 continue  # Polygon is completely outside the screen
 
             # Collision Box
@@ -401,18 +439,18 @@ class DiepIOEnvBody(Env):
             pygame.draw.polygon(surface, color, vertices)
 
             # Draw HP bar if the polygon's center is on-screen or near the edge
-            # if not (-grid_size <= pixel_x <= self.screen_size + grid_size and -grid_size <= pixel_y <= self.screen_size + grid_size):
+            # if not (-grid_size <= pixel_x <= cfg.SCREEN_SIZE + grid_size and -grid_size <= pixel_y <= cfg.SCREEN_SIZE + grid_size):
             #     continue
 
             if unit.hp < unit.max_hp:
                 half_unit_size = grid_size * unit.radius
                 pygame.draw.rect(
                     surface, (0, 0, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
                 )
                 pygame.draw.rect(
                     surface, (0, 216, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, max(1, self.screen_size / 200))
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, cfg.SCREEN_SIZE / 200)
                 )
 
         # Draw all tanks
@@ -430,8 +468,8 @@ class DiepIOEnvBody(Env):
             max_y = pixel_y + unit.radius * 2
 
             # Check if the unit's bounding box intersects with the screen
-            if (max_x < 0 or min_x >= self.screen_size or
-                max_y < 0 or min_y >= self.screen_size):
+            if (max_x < 0 or min_x >= cfg.SCREEN_SIZE or
+                max_y < 0 or min_y >= cfg.SCREEN_SIZE):
                 continue  # unit is completely outside the screen
 
             # Draw orientation line
@@ -445,7 +483,7 @@ class DiepIOEnvBody(Env):
             )
 
             # Draw body
-            color = (0, 127, 255) if unit.id == agent.id else (255, 0, 0)
+            color = (0, 127, 255) if unit.id == agent_id else (255, 0, 0)
             if unit.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
                 color = (255, 255, 255)
             pygame.draw.circle(
@@ -458,80 +496,78 @@ class DiepIOEnvBody(Env):
                 half_unit_size = grid_size * unit.radius
                 pygame.draw.rect(
                     surface, (0, 0, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
                 )
                 pygame.draw.rect(
                     surface, (0, 216, 0),
-                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, max(1, self.screen_size / 200))
+                    (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * unit.hp / unit.max_hp, cfg.SCREEN_SIZE / 200)
                 )
 
-        # for bullet in self.bullet_pool.bullets:
-        #     if not bullet.alive:
-        #         continue
-        #     rel_x = bullet.x - center_x
-        #     rel_y = bullet.y - center_y
-        #     pixel_x = int(screen_half + rel_x * grid_size)
-        #     pixel_y = int(screen_half + rel_y * grid_size)
-        #     if 0 <= pixel_x < self.screen_size and 0 <= pixel_y < self.screen_size:
-        #         color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == agent_id else (255, 0, 0)
-        #         # color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
-        #         if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
-        #             color = (255, 255, 255)
-        #         pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
+        for bullet in self.bullet_pool.bullets:
+            if not bullet.alive:
+                continue
+            rel_x = bullet.x - center_x
+            rel_y = bullet.y - center_y
+            pixel_x = int(screen_half + rel_x * grid_size)
+            pixel_y = int(screen_half + rel_y * grid_size)
+            if 0 <= pixel_x < cfg.SCREEN_SIZE and 0 <= pixel_y < cfg.SCREEN_SIZE:
+                color = (0, max(0, 127 - bullet.move_frame), max(0, 255 - bullet.move_frame)) if bullet.tank.id == agent_id else (255, 0, 0)
+                # color = (0, 127, 255) if bullet.tank.id == 0 else (255, 0, 0)
+                if bullet.invulberable_frame >= cfg.INVULNERABLE_FRAMES:
+                    color = (255, 255, 255)
+                pygame.draw.circle(surface, color, (pixel_x, pixel_y), int(bullet.radius * grid_size))
 
-        #         # Draw HP bar
-        #         if for_render and bullet.hp < bullet.max_hp:
-        #             half_unit_size = grid_size * bullet.radius
-        #             pygame.draw.rect(
-        #                 surface, (0, 0, 0),
-        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, max(1, self.screen_size / 200))
-        #             )
-        #             pygame.draw.rect(
-        #                 surface, (0, 216, 0),
-        #                 (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, max(1, self.screen_size / 200))
-        #             )
+                # Draw HP bar
+                if for_render and bullet.hp < bullet.max_hp:
+                    half_unit_size = grid_size * bullet.radius
+                    pygame.draw.rect(
+                        surface, (0, 0, 0),
+                        (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2, cfg.SCREEN_SIZE / 200)
+                    )
+                    pygame.draw.rect(
+                        surface, (0, 216, 0),
+                        (pixel_x - half_unit_size, pixel_y + half_unit_size * 1.3, half_unit_size * 2 * bullet.hp / bullet.max_hp, cfg.SCREEN_SIZE / 200)
+                    )
 
         if for_render:
             # Render skill panel for agent 0
             self.skill_buttons = []  # Clear previous buttons
-            scale = self.screen_size / 800
-            self._render_skill_panel(self.tanks[0], surface, 10 * scale, self.screen_size - 260 * scale)  # Left-bottom position
+            scale = cfg.SCREEN_SIZE / 800
+            self._render_skill_panel(self.tanks[agent_id], surface, 10 * scale, cfg.SCREEN_SIZE - 260 * scale)  # Left-bottom position
 
         return surface
         # Convert surface to RGB NumPy array
         # obs_array = pygame.surfarray.array3d(obs_surface)  # Shape: (500, 500, 3)
         # return obs_array
 
-    def _auto_choose_skill(self, mode=0):
-        tank: Tank = self.tanks[0]
+    def _auto_choose_skill(self, agent: str, mode=0):
+        tank: Tank = self.tanks[int(agent.split("_")[1])]
 
         if tank.skill_points == 0:
             return 0
 
         if mode == 1: # bullet shoot
             min_skill = min(tank.stats[TST.BulletPen], tank.stats[TST.BulletDamage], tank.stats[TST.Reload])
-            if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
-                return TST.BulletSpeed + 1
-            if min_skill == 7 and tank.stats[TST.BulletSpeed] >= 5:
-                return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage]) + 1
             for i in [TST.BulletPen, TST.BulletDamage, TST.Reload]:
                 if tank.stats[i] == min_skill:
                     return i + 1
+            if min_skill == 7 and tank.stats[TST.BulletSpeed] < 5:
+                return TST.BulletSpeed + 1
+            return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BulletSpeed, TST.Speed, TST.BodyDamage]) + 1
 
         elif mode == 2: # body damage
             min_skill = min(tank.stats[TST.HealthRegen], tank.stats[TST.MaxHealth], tank.stats[TST.BodyDamage])
-            if min_skill == 7 and tank.stats[TST.Speed] < 5:
-                return TST.Speed + 1
-            if min_skill == 7 and tank.stats[TST.Speed] >= 5:
-                return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
             for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
                 if tank.stats[i] == min_skill:
                     return i + 1
+            if min_skill == 7 and tank.stats[TST.Speed] < 5:
+                return TST.Speed + 1
+            return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
 
         return np.random.randint(1, 9) # choose 1 ~ 8
 
-    def _auto_shoot(self):
-        tank: Tank = self.tanks[0]
+    def _auto_shoot(self, agent: str):
+        tank: Tank = self.tanks[int(agent.split("_")[1])]
         self_x, self_y = tank.x, tank.y
 
         min_x = tank.x - tank.observation_size / 2
@@ -579,7 +615,7 @@ class DiepIOEnvBody(Env):
 
         # Update tank direction based on mouse position
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        screen_half = self.screen_size // 2
+        screen_half = cfg.SCREEN_SIZE // 2
         rx, ry = mouse_x - screen_half, screen_half - mouse_y
         if rx != 0 or ry != 0:
             magnitude = np.hypot(rx, ry)
@@ -604,19 +640,10 @@ class DiepIOEnvBody(Env):
                     skill_index = event.key - pygame.K_1 + 1  # 1-based
                     break
 
-        dx_dy_map = {
-            (1, 1): 0,  # NONE
-            (1, 2): 1,  # W
-            (0, 1): 2,  # A
-            (1, 0): 3,  # S
-            (2, 1): 4,  # D
-            (0, 2): 5,  # W+A
-            (2, 2): 6,  # W+D
-            (0, 0): 7,  # S+A
-            (2, 0): 8   # S+D
+        action = {
+            "d": [dx_idx, dy_idx, shoot, skill_index],
+            "c": [rx, ry]
         }
-
-        action = dx_dy_map[(dx_idx, dy_idx)]
         return action
 
     def _get_random_input(self):
@@ -639,19 +666,10 @@ class DiepIOEnvBody(Env):
         shoot = np.random.randint(2)
         skill_index = 0
 
-        dx_dy_map = {
-            (1, 1): 0,  # NONE
-            (1, 2): 1,  # W
-            (0, 1): 2,  # A
-            (1, 0): 3,  # S
-            (2, 1): 4,  # D
-            (0, 2): 5,  # W+A
-            (2, 2): 6,  # W+D
-            (0, 0): 7,  # S+A
-            (2, 0): 8   # S+D
+        action = {
+            "d": [dx_idx, dy_idx, shoot, skill_index],
+            "c": [rx, ry]
         }
-
-        action = dx_dy_map[(dx_idx, dy_idx)]
         return action
 
     def _handle_collisions(self):
@@ -662,9 +680,9 @@ class DiepIOEnvBody(Env):
 
             for thing_id in nearby_id:
                 thing = self.all_things[thing_id]
-                # if thing.type == UnitType.Tank:
-                #     self.__tank_on_tank(tank0, thing)
-                if thing.type == UnitType.Polygon:
+                if thing.type == UnitType.Tank:
+                    self.__tank_on_tank(tank0, thing)
+                elif thing.type == UnitType.Polygon:
                     self.__tank_on_polygon(tank0, thing)
 
         for i in range(self.n_polygons):
@@ -677,7 +695,7 @@ class DiepIOEnvBody(Env):
                     self.__polygon_on_polygon(poly0, thing)
 
         # handle collisions between bullets and other objects
-        # self._handle_bullet_collisions()
+        self._handle_bullet_collisions()
 
     def _handle_bullet_collisions(self):
         """Handle collisions between bullets and tanks/polygons."""
@@ -718,7 +736,9 @@ class DiepIOEnvBody(Env):
                     thing.max_collision_frame = cfg.BULLET_BOUNCE_DEC_FRAMES
                     bullet.deal_damage(thing)
 
-                    self._rewards += 0.1
+                    self._rewards[self._agent_ids[bullet.tank.id]] += 0.1
+                    if thing.type == UnitType.Tank:
+                        self._rewards[self._agent_ids[thing.id]] -= 0.001
 
                 max_v = cfg.BASE_MAX_VELOCITY * cfg.BULLET_BOUNCE_V_SCALE
                 # print(max_v)
@@ -821,8 +841,7 @@ class DiepIOEnvBody(Env):
             poly.collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             poly.max_collision_frame = cfg.POLYGON_TANK_BOUNCE_DEC_FRAMES
             tank.deal_damage(poly, tank_hp_before_hit)
-            if tank.hp > 25:
-                self._rewards += 0.1
+            self._rewards[self._agent_ids[tank.id]] += 0.1
 
             if tank.last_collider_id == poly.id:
                 tank.same_collider_counter += 1
@@ -872,26 +891,34 @@ class DiepIOEnvBody(Env):
         dict[str, np.ndarray], dict[str, float], dict[str, bool], dict[str, bool], dict[str, Any]
     ]:
         self.step_count += 1
-        self._rewards = 0.0
-        observations = None
-        truncations = False
+        self._rewards = {agent: 0.0 for agent in self._agent_ids}
+        observations = {}
+        truncations = {agent: False for agent in self._agent_ids}
+        truncations["__all__"] = False
+
+        assert len(actions) == self.n_tanks, f"{self.n_tanks}, {actions}"
 
         # Process actions for each agent
-        tank = self.tanks[0]
-        if tank.alive and not self._dones:
+        for agent, action in actions.items():
+            agent_idx = int(agent.split("_")[1])
+            tank = self.tanks[agent_idx]
+            if not tank.alive or self._dones[agent]:
+                continue
 
             tank.regen_health()
             tank.update_counter()
 
-            dx, dy = self.action_map[int(actions)]
-            skill_index = self._auto_choose_skill(mode=2)
+            discrete_action, continuous_action = action["d"], action["c"]
+            dx, dy, shoot, skill_index = discrete_action
+            rx, ry = continuous_action
+            dx, dy = dx - 1, dy - 1
 
             # invalid move reward
             if (dx < 0 and tank.x <= tank.radius + 1e-6 or
-                dx > 0 and tank.x >= self.map_size - tank.radius - 1e-6 or
+                dx > 0 and tank.x >= cfg.MAP_SIZE - tank.radius - 1e-6 or
                 dy < 0 and tank.y <= tank.radius + 1e-6 or
-                dy > 0 and tank.y >= self.map_size - tank.radius - 1e-6):
-                self._rewards -= 0.01
+                dy > 0 and tank.y >= cfg.MAP_SIZE - tank.radius - 1e-6):
+                self._rewards[agent] -= 0.001
 
             old_x, old_y = tank.x, tank.y
 
@@ -899,9 +926,9 @@ class DiepIOEnvBody(Env):
             if skill_index > 0:
                 if tank.add_points(skill_index - 1):
                     tank.calc_stats_properties()
-                    self._rewards += 1
+                    self._rewards[agent] += 1
                 else:
-                    self._rewards -= 0.002
+                    self._rewards[agent] -= 0.01
 
             # avoid zero-division
             if dx != 0 or dy != 0:
@@ -909,78 +936,88 @@ class DiepIOEnvBody(Env):
                 dx, dy = dx / magnitude, dy / magnitude
 
             # avoid zero-division
-            # if rx != 0 or ry != 0:
-            #     magnitude = np.hypot(rx, ry)
-            #     tank.rx, tank.ry = rx / magnitude, ry / magnitude
+            if rx != 0 or ry != 0:
+                magnitude = np.hypot(rx, ry)
+                tank.rx, tank.ry = rx / magnitude, ry / magnitude
 
-            tank.move(dx, dy, self.map_size)
+            tank.move(dx, dy)
             self.colhash.update(old_x, old_y, tank.x, tank.y, tank.id)
 
-            # if shoot > 0.5 and tank.reload_counter <= 0:
-            #     new_bullet = self.bullet_pool.get_new_bullet(tank)
-            #     self.all_things[new_bullet.id] = new_bullet
-            #     tank.reload_counter = tank.reload_frames
+            if shoot > 0.5 and tank.reload_counter <= 0:
+                new_bullet = self.bullet_pool.get_new_bullet(tank)
+                self.all_things[new_bullet.id] = new_bullet
+                tank.reload_counter = tank.reload_frames
 
-            #     tank.recoil_vx += -1 * tank.rx
-            #     tank.recoil_vy -= -1 * tank.ry
+                tank.recoil_vx += -1 * tank.rx
+                tank.recoil_vy -= -1 * tank.ry
 
         for poly in self.polygons:
             old_x, old_y = poly.x, poly.y
-
             if poly.alive:
                 poly.regen_health()
                 poly.update_counter()
                 poly.update_direction()
-                poly.move(poly.rx, poly.ry, self.map_size)
+                poly.move(poly.rx, poly.ry)
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
             else:
                 # respawn
                 poly.__init__(
-                    x=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
-                    y=np.random.uniform(cfg.BORDER_SIZE, self.map_size - cfg.BORDER_SIZE),
+                    x=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
+                    y=np.random.uniform(cfg.BORDER_SIZE, cfg.MAP_SIZE - cfg.BORDER_SIZE),
                     side=self._rand_poly_side(),
                     new_id=False,
                 )
                 self.colhash.update(old_x, old_y, poly.x, poly.y, poly.id)
+
         # Update bullets
-        # for bullet in self.bullet_pool.bullets:  # iterate over a copy
-        #     if not bullet.alive:
-        #         continue
-        #     bullet.update_counter()
-        #     bullet.move()
-        #     if not bullet.alive:
-        #         # remove from environment
-        #         del self.all_things[bullet.id]
+        for bullet in self.bullet_pool.bullets:  # iterate over a copy
+            if not bullet.alive:
+                continue
+            bullet.update_counter()
+            bullet.move()
+            if not bullet.alive:
+                # remove from environment
+                del self.all_things[bullet.id]
 
         self._handle_collisions()
 
         # Compute rewards and observations
+        for agent in self._agent_ids:
+            agent_idx = int(agent.split("_")[1])
+            tank = self.tanks[agent_idx]
+            if not self._dones[agent] and not tank.alive:
+                tank.hp = 0
+                tank.calc_respawn_score()
+                self._rewards[agent] -= 10
+                self._dones[agent] = True
 
-        tank = self.tanks[0]
-        if not self._dones and not tank.alive:
-            tank.hp = 0
-            # tank.calc_respawn_score()
-            self._rewards -= 10
-            self._dones = True
+            self._rewards[agent] += np.clip(tank.score - self.prev_tanks_score[agent_idx], -500, 500) * 0.1
+            self.prev_tanks_score[agent_idx] = tank.score
 
-        self._rewards += np.clip(tank.score - self.prev_tanks_score, -500, 500) * 0.1
-        self.prev_tanks_score = tank.score
+            # if tank.alive and self.no_reward_frames[agent_idx] > 60 * cfg.FPS:
+            #     self._rewards[agent] -= 1
+            #     truncations[agent] = True
 
-        if self.no_reward_frames > 10 * cfg.FPS:
-            self._rewards -= 0.002
+            if self.no_reward_frames[agent_idx] > 10 * cfg.FPS:
+                self._rewards[agent] -= 0.001
 
-        if self._rewards > 0:
-            self.no_reward_frames = 0
-        else:
-            self.no_reward_frames += 1
+            if self._rewards[agent] > 0:
+                self.no_reward_frames[agent_idx] = 0
+            else:
+                self.no_reward_frames[agent_idx] += 1
 
-        if skip_frame:
-            observations = None
-        else:
-            observations = self._get_obs()
+            if skip_frame:
+                observations[agent] = {}
+            else:
+                observations[agent] = self._get_obs(agent_idx)
 
-        if self.step_count >= self.max_steps or sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1:
-            self._dones = True
+        if self.step_count >= self.max_steps or sum(tank.alive for tank in self.tanks) <= self.n_tanks - 1 or any(self._dones.values()):
+            self._dones = {agent: True for agent in self._agent_ids}
+            self._dones["__all__"] = True
+
+        if any(truncations.values()):
+            truncations = {agent: True for agent in self._agent_ids}
+            truncations["__all__"] = True
 
         if self.render_mode:
             self.render()
@@ -1006,9 +1043,9 @@ class DiepIOEnvBody(Env):
         for i in range(self.n_tanks):
             # Render only agent 0's perspective
             # if self.tanks[0].alive:
-            surface = self._get_frame(for_render=True)
+            surface = self._get_frame(i, for_render=True)
             # self.screen.blit(surface, (0, 0))
-            self.screen.blit(surface, (self.screen_size * i, 0))
+            self.screen.blit(surface, (cfg.SCREEN_SIZE * i, 0))
 
         pygame.display.flip()
         if self.render_mode == "human":
@@ -1020,30 +1057,39 @@ class DiepIOEnvBody(Env):
 
 if __name__ == "__main__":
     env_config = {
-        "n_tanks": 1,
+        "n_tanks": 2,
         "render_mode": "human",
-        "max_steps": 5000,
+        "max_steps": 1000000,
     }
 
-    env = DiepIOEnvBody(env_config)
+    env = DiepIOEnvBasic(env_config)
 
     obs, _ = env.reset()
     print(env.observation_space)
     print(env.action_space)
-    check_obs_in_space(obs, env.observation_space)
-
-    total_rewards = 0
+    for i in range(env.n_tanks):
+        check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
     while True:
         action_0 = env._get_player_input()
+        rx, ry, shoot = env._auto_shoot("agent_0")
+        action_0["d"][2] = shoot
+        action_0["c"] = [rx, ry]
+        action_0["d"][3] = env._auto_choose_skill("agent_0", mode=1)
 
-        obs, rewards, dones, truncations, infos = env.step(action_0)
-        check_obs_in_space(obs, env.observation_space)
+        action_1 = env._get_random_input()
+        rx, ry, shoot = env._auto_shoot("agent_1")
+        action_1["d"][2] = shoot
+        action_1["c"] = [rx, ry]
+        action_1["d"][3] = env._auto_choose_skill("agent_1", mode=2)
 
-        total_rewards += rewards
+        obs, rewards, dones, truncations, infos = env.step({
+            "agent_0": action_0,
+            "agent_1": action_1,
+        })
+        for i in range(env.n_tanks):
+            check_obs_in_space(obs[f"agent_{i}"], env.observation_spaces[f"agent_{i}"])
 
-        if dones:
+        if dones["__all__"]:
             break
     env.close()
-
-    print(total_rewards)

@@ -1,7 +1,7 @@
 import numpy as np
-from unit import Unit, UnitType
-from config import config as cfg
-from tank import Tank
+from .unit import Unit, UnitType
+from .config import config as cfg
+from .tank import Tank
 from typing import Optional
 
 class Bullet(Unit):
