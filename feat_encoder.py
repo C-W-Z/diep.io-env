@@ -88,6 +88,10 @@ class DeepSetEncoder(nn.Module):
         No Batching
         """
         N, F = x.shape
+
+        if N == 0:  # no objects in this category
+            return torch.zeros(F).to(x.device)
+
         features = []
 
         for i, meta in enumerate(self.feature_meta):
