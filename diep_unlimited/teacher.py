@@ -3,7 +3,6 @@
 from common import *
 from sakuya import Agent
 from env import DiepIOEnvBasic
-from tqdm import tqdm
 
 # environment
 env = DiepIOEnvBasic()
@@ -28,9 +27,7 @@ agent1 = Agent(
 # numbers
 WARMUP      = 10000
 TOTAL_STEPS = 1000000
-SAVE_PER_EP = 25
-
-bar = tqdm(total = TOTAL_STEPS)
+SAVE_PER_EP = 5
 
 n_steps   = 0
 for episode in itertools.count(1):
@@ -73,7 +70,6 @@ for episode in itertools.count(1):
 
         done = dones["__all__"]
         obs = next_obs
-        bar.update(1)
         n_steps += 1
 
     end = time.time()
