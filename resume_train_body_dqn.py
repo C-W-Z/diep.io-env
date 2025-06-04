@@ -86,21 +86,12 @@ config = (
 )
 
 # Start training
-tuner = tune.Tuner(
-    "DQN",
-    param_space=config.to_dict(),
-    run_config=tune.RunConfig(
-        stop={"training_iteration": 1000000},
-        name="diepio_body_onlymove_dqn",
-        checkpoint_config=tune.CheckpointConfig(
-            checkpoint_at_end=True,
-            checkpoint_frequency=50,
-            num_to_keep=10,
-            # checkpoint_score_attribute="episode_reward_mean",
-            # checkpoint_score_order="max"
-        ),
-        verbose=1
-    )
+tuner = tune.Tuner.restore(
+    path="~/ray_results/diepio_body_onlymove_dqn",  # 先前的 Tuner 輸出目錄
+    trainable="DQN",
+    resume_unfinished=True,        # ✅ 重新開始沒跑完的 trial
+    restart_errored=True,          # ✅ 自動重跑有錯的 trial
+    resume_errored=True            # ✅ 繼續上次出錯的
 )
 
 results = tuner.fit()

@@ -36,8 +36,8 @@ class DiepIOEnvBody(Env):
 
         # Observation space
         # === Part 1: Self state ===
-        low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,   0.0] + [0] * 8
-        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 278.0] + [7] * 8
+        low  = [0.0, 0.0, 1.0, -1.0, -1.0, 0.0,   0.0] + [0] * 4
+        high = [1.0, 1.0, 1.6,  1.0,  1.0, 1.0, 278.0] + [7] * 4
 
         # === Part 2: Polygons ===
         polygon_low  = [-1.0, -1.0,                               0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]
@@ -153,10 +153,10 @@ class DiepIOEnvBody(Env):
             agent.stats[TST.HealthRegen],                   # Health regeneration level
             agent.stats[TST.MaxHealth],                     # Max health level
             agent.stats[TST.BodyDamage],                    # Body damage level
-            agent.stats[TST.BulletSpeed],                   # Bullet speed level
-            agent.stats[TST.BulletPen],                     # Bullet penetration level
-            agent.stats[TST.BulletDamage],                  # Bullet damage level
-            agent.stats[TST.Reload],                        # Reload level
+            # agent.stats[TST.BulletSpeed],                   # Bullet speed level
+            # agent.stats[TST.BulletPen],                     # Bullet penetration level
+            # agent.stats[TST.BulletDamage],                  # Bullet damage level
+            # agent.stats[TST.Reload],                        # Reload level
             agent.stats[TST.Speed],                         # Speed level
         ]
 
@@ -522,13 +522,15 @@ class DiepIOEnvBody(Env):
 
         elif mode == 2: # body damage
             min_skill = min(tank.stats[TST.HealthRegen], tank.stats[TST.MaxHealth], tank.stats[TST.BodyDamage])
-            if min_skill == 7 and tank.stats[TST.Speed] < 5:
+            if min_skill < 7:
+                return np.random.choice([TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]) + 1
+            if min_skill == 7 and tank.stats[TST.Speed] < 7:
                 return TST.Speed + 1
-            if min_skill == 7 and tank.stats[TST.Speed] >= 5:
-                return np.random.choice([TST.BulletPen, TST.BulletDamage, TST.BulletSpeed, TST.Speed, TST.Reload]) + 1
-            for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
-                if tank.stats[i] == min_skill:
-                    return i + 1
+            if min_skill == 7 and tank.stats[TST.Speed] == 7:
+                return 0
+            # for i in [TST.HealthRegen, TST.MaxHealth, TST.BodyDamage]:
+            #     if tank.stats[i] == min_skill:
+            #         return i + 1
 
         return np.random.randint(1, 9) # choose 1 ~ 8
 

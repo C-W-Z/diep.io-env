@@ -19,8 +19,8 @@ register_env("diepio-v0", env_creator)
 # 初始化 Ray
 ray.init(ignore_reinit_error=True, include_dashboard=False)
 
-# 你的 checkpoint 路徑，例如：
-checkpoint_path = "~/ray_results/diepio_body_onlymove_dqn/checkpoint_000009"
+# 你的 checkpoint 絕對路徑，例如：
+checkpoint_path = "~/diep.io-env/ray_results/diepio_body_onlymove_dqn/checkpoint_000015"
 
 # 載入訓練好的 policy
 algo = Algorithm.from_checkpoint(checkpoint_path)
@@ -57,7 +57,7 @@ while not done:
 
     # unbatch 動作: Tensor -> np.ndarray
     action = unbatch(result['actions'])[0].detach().cpu().numpy()
-    if np.random.rand() < 0.05:
+    if np.random.rand() < 0.01:
         action = np.random.randint(9)
 
     obs, reward, done, trunc, info = env.step(action)
