@@ -12,7 +12,19 @@ class CollisionHash:
                 self.grid[i, j] = set()
 
     def coord2grid(self, x, y):
-        return int(x / self.factor), int(y / self.factor)
+        i = int(x / self.factor)
+        j = int(y / self.factor)
+        # Ensure indices are within bounds
+        if i < 0:
+            i = 0
+        elif i >= self.grid.shape[0]:
+            i = self.grid.shape[0] - 1
+        if j < 0:
+            j = 0
+        elif j >= self.grid.shape[1]:
+            j = self.grid.shape[1] - 1
+            
+        return i, j
 
     # fetch nearby units
     # Returns: a list of nearby units IDs

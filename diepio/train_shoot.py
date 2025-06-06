@@ -5,11 +5,10 @@ import ray
 from ray import tune
 from ray.tune.registry import register_env
 import json
-
-# 1. 先把舊的「從 agents.ppo import PPOTrainer」改成：
+import time
+from tqdm import tqdm
 from ray.rllib.algorithms.ppo import PPO
-
-# 假設 env_shoot.py 已在同目錄下，且定義了 DiepIOEnvBasic
+from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from .env_shoot import DiepIOEnvBasic
 
 # 抑制 Ray 本身的 INFO / WARNING 訊息
@@ -28,6 +27,20 @@ def env_creator(env_config):
     env_config 會透過 RLlib 的 config["env_config"] 傳入，像是 n_tanks、render_mode、max_steps 等參數。
     """
     return DiepIOEnvBasic(env_config)
+
+class MyCallbacks(DefaultCallbacks):
+    def on_episode_end(self, *, episode, env_runner, metrics_logger, env_index, **kwargs):
+        # 取得該回合的單一 reward 序列
+        # rewards_list = episode.rewards  # List[float]
+        # last_reward = episode.rewards[-1]  # 取得最新 timestep 的獎勵
+        # 或使用 episode.get_rewards(-1)
+        # print(episode.get_rewards())
+        last_reward = float(sum(episode.get_rewards()['agent_0']))
+        # print(last_reward)
+        with open("output.txt", "a") as file:
+            file.write(f"Episode {i}\tReward {last_reward:.2f}\tTime {time.time() - start_time}\n")
+            file.flush()
+
 
 if __name__ == "__main__":
     # 2. 初始化 Ray（確保你已經用 conda/venv 切到正確的 env）
@@ -57,12 +70,13 @@ if __name__ == "__main__":
             "unlimited_obs": False,
         },
         "framework": "torch",   # 或 "tf"
+        "num_gpus": 1,
         "num_workers": 0,       # 單機的情況下可設 0，全部都在 driver 上跑
         # PPO 的超參數，可依需求調整：
         "train_batch_size": 4000,
         "sgd_minibatch_size": 128,
         "num_sgd_iter": 10,
-        "lr": 5e-5,
+        "lr": 1e-3,
         "gamma": 0.99,
         # Multi-agent 設定（雖然只跑一個 agent，但因 DiepIOEnvBasic 繼承 MultiAgentEnv，須使用此介面）
         "multiagent": {
@@ -76,23 +90,31 @@ if __name__ == "__main__":
         # 訓練結果、checkpoint 等資料會存在這裡
         "local_dir": os.path.join(os.getcwd(), "rllib_results"),
         "log_level": "ERROR",
+        "model": {
+            "fcnet_hiddens": [512, 512],
+        },
+        "callbacks": MyCallbacks,
     }
 
     # 6. 建立 PPO 演算法物件（新版 API 用 PPO 而非 PPOTrainer）
     trainer = PPO(config=config)
 
     # 7. 訓練迴圈：跑 1000 次迭代 (可自行調整)
-    max_iterations = 1000
+    start_time = time.time()
+    max_iterations = 2000
     file = open("output.txt", "w")
-    for i in range(1, max_iterations + 1):
+    file.close()
+    pbar = tqdm(range(1, max_iterations + 1))
+    for i in pbar:
         result = trainer.train()
-        # print(f"Iteration {i}: reward = {result['env_runners']['episode_return_mean']:.2f}")
-        file.write(f"Iteration {i}: reward = {result['env_runners']['episode_return_mean']:.2f}\n")
-        file.flush()
+        # print(result['env_runners'].keys())
+        # file.write(f"Average {result['env_runners']['episode_return_mean']}\n")
+        # file.flush()
 
         # 每 10 次迭代存一次 checkpoint
         if i % 10 == 0:
             checkpoint_path = trainer.save()
+            pbar.set_description(f"Iteration {i}, Checkpoint saved")
 
     # 8. 訓練結束，關閉 Ray
     ray.shutdown()
